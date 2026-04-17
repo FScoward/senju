@@ -1,5 +1,6 @@
 ---
 name: kouunryuusui
+license: MIT
 description: "Epic/USチケットから設計→チケット分割→実装→PR作成まで自律的に走り続ける2層構造の統合開発ワークフロー。上位フロー（設計・分割）と下位フロー（実装・PR）を分離し、E&Cも設計に基づいて整理する。明示的に「/kouunryuusui」と指示された場合のみ使用。"
 aliases:
   - kurs

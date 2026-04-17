@@ -3,7 +3,6 @@
 > 千の手で、千の仕事を。
 
 `senju` は [agent skills](https://agentskills.io) の個人コレクション。
-GitHub が **source of truth**、手元の `~/.claude/skills/` へは `gh skill` で取り込む。
 
 ## Quick start
 

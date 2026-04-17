@@ -30,5 +30,8 @@ node_modules/
 # gh skill 由来のローカルキャッシュ（存在する場合）
 .gh-skill-cache/
 
+# インストール済みスキル（他者のコンテンツを誤公開しない）
+.claude/skills/
+
 # セッションログ
 *.log
