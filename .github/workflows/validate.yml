@@ -1,0 +1,36 @@
+name: Validate Skills
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontmatter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Check required frontmatter fields
+        run: ./scripts/check-frontmatter.sh --strict
+
+  # gh skill CLI による preview / publish 向け検証。
+  # リリース時期に応じて有効化する。
+  #
+  # gh-skill:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install gh skill
+  #       run: gh extension install github/gh-skill
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Preview all skills
+  #       run: |
+  #         find skills -name SKILL.md -print0 \
+  #           | xargs -0 -n1 dirname \
+  #           | xargs -I{} gh skill preview {}

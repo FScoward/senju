@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python artifacts (script-based skills may leave these)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node artifacts
+node_modules/
+
+# スキルの作業領域（skill-creator 等が生成）
+# senju にはスキル本体のみを置き、workspace は含めない
+**/*-workspace/
+**/iteration-*/
+**/skill-snapshot/
+**/evals/output/
+
+# gh skill 由来のローカルキャッシュ（存在する場合）
+.gh-skill-cache/
+
+# セッションログ
+*.log
