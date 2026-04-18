@@ -1,0 +1,23 @@
+{
+  "skill_name": "jira-cli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "MYAPP-123のイシューの内容を確認してほしい",
+      "expected_output": "jira issue view MYAPP-123 コマンドを実行してイシューの詳細を表示する",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "プロジェクト「SHOP」にバグを起票して。スマホのカート画面で合計金額が0円になるバグが報告されてる。優先度は高めで",
+      "expected_output": "jira issue create コマンドでBugタイプ、高優先度のイシューを作成する",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "SHOP-456に「原因調査しました。DBのキャッシュが古いデータを返していたのが原因です。修正PRをレビューお願いします」ってコメントを追加して",
+      "expected_output": "jira issue comment add SHOP-456 コマンドでコメントを追加する",
+      "files": []
+    }
+  ]
+}
