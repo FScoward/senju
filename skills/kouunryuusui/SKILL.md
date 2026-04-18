@@ -203,6 +203,12 @@ worktreeルートの `.claude/tmp/decisions/` ディレクトリに保存:
 
 各フローの詳細手順は参照ファイルに分離されている。該当するフローに進む際に読み込むこと。
 
+## 要求定義（E1 前の任意フェーズ）
+
+**→ `software-requirements` スキルを呼び出す**
+
+Epic/US の要求が曖昧・未整理な場合、E1 の前に `software-requirements` スキルで対話形式の要求整理を行い、仕様を明確化してからフローに入る。要求が十分に明確な場合はスキップしてよい。
+
 ## 上位フロー（E1〜E4）
 
 **→ `references/upper-flow.md` を読み込む**
