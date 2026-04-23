@@ -52,13 +52,45 @@
 
 ## T1: Worktree作成と隔離
 
+### base ブランチの決定（stacked-pr 考慮）
+
+> **⚠️ base は `main` 固定ではない**
+>
+> 通常は `main`（または `origin/main`）が base だが、**stacked-pr** 運用時は親 feature ブランチが base になる。
+> `$BASE` を正しく決定し、後続フェーズ（特に QG-2）で参照できるよう記録する。
+
+| 条件 | base ブランチ |
+|------|-------------|
+| 独立した新規チケット | `origin/main` |
+| stacked-pr の子チケット（親PR未マージ） | 親 feature ブランチ（例: `feature/parent-ticket`） |
+| stacked-pr の子チケット（親PRマージ済み） | `origin/main` |
+| E&C の後続チケット | 前段チケットの feature ブランチまたは main（design に従う） |
+
+### Worktree 作成コマンド
+
 ```bash
-git branch feature/{チケットID} main
+# base ブランチを決定（ticket-plan.md や stacked-pr の指示を参照）
+BASE="origin/main"  # または feature/parent-ticket など
+
+git fetch origin
+git branch feature/{チケットID} $BASE
 git worktree add ../feature-{チケットID} feature/{チケットID}
 cd ../feature-{チケットID}
 ```
 
-worktreeルートに `scratch.md`（スクラッチパッド）と `.claude/tmp/decisions/` ディレクトリを作成。
+### 記録（QG-2 から参照されるため必須）
+
+worktreeルートに以下を作成:
+- `scratch.md`（スクラッチパッド）
+- `.claude/tmp/decisions/` ディレクトリ
+- **`.claude/tmp/base-branch.txt`**: base ブランチ名を記録（改行なしで1行）
+
+```bash
+mkdir -p .claude/tmp/decisions
+echo -n "$BASE" > .claude/tmp/base-branch.txt
+```
+
+> **なぜ記録が必要か**: QG-2 の `/simplify` 呼び出しで PR 差分範囲を特定するために `$BASE` を参照する。ハードコードすると stacked-pr で誤った差分範囲を見てしまう。
 
 ### Native Team ワーカーモード（E4から呼ばれる場合）
 
@@ -271,10 +303,76 @@ BEとFEを並列で実行:
 
 ### QG-2: コード品質改善（旧T3b）
 
-3観点をチェックし問題があれば自動修正:
+**→ `/simplify` スキルを呼び出してコード品質改善を委譲する。**
+
+`simplify` スキルは「変更されたコード」を対象に reuse / quality / efficiency の3観点でレビューし、問題があれば自動修正する（kouunryuusui の QG-2 の責務とほぼ同じ）。
+
+> **⚠️ 対象範囲の明示が必須**
+>
+> `simplify` のデフォルトは "recently modified code"（直近の編集）のみ。
+> kouunryuusui の QG-2 は **PR 全体の変更差分**（base ブランチからの全差分）を対象にする必要があるため、呼び出し時に対象範囲を明示的に指定する。
+
+#### base ブランチ検出（ハードコード禁止）
+
+`origin/main` をハードコードしてはいけない。**stacked-pr** などで base が別の feature ブランチになるケースがあるため、以下の順で検出する:
+
+| 優先度 | 検出ソース | コマンド例 |
+|-------|----------|----------|
+| 1 | T1 で記録された base（`.claude/tmp/base-branch.txt`） | `cat .claude/tmp/base-branch.txt` |
+| 2 | GitHub PR のメタデータ（PR が既に作成済みの場合） | `gh pr view --json baseRefName -q .baseRefName` |
+| 3 | 現在ブランチの upstream tracking | `git rev-parse --abbrev-ref @{upstream}` |
+| 4 | `git config` で設定された default base | `git config --get branch.$(git branch --show-current).merge` |
+| 5 | フォールバック（最終手段） | `origin/main` |
+
+> **T1 での記録（推奨）**: T1 で worktree を作成するときに、base ブランチを `.claude/tmp/base-branch.txt` に書き出しておく。stacked-pr 運用時はここに `feature/parent-ticket` のような値が入る。
+
+検出後、`$BASE` として以下の手順で使う（検出は QG サブエージェント内で実行）:
+
+```bash
+BASE=$(cat .claude/tmp/base-branch.txt 2>/dev/null \
+  || gh pr view --json baseRefName -q .baseRefName 2>/dev/null \
+  || git rev-parse --abbrev-ref @{upstream} 2>/dev/null \
+  || echo "origin/main")
+
+# ドットが3つの ... は merge-base からの差分（PR と等価）
+DIFF_RANGE="${BASE}...HEAD"
+```
+
+#### 呼び出し定義
+
+| 呼び出し方 | 内容 |
+|----------|------|
+| スキル起動 | `Skill(skill="simplify", args="<PR差分の指定>")` |
+| 対象範囲指定 | 検出した `$BASE` を使って `git diff $BASE...HEAD` の全ファイルを対象にする旨を args に明示 |
+| 対象ファイル | PR で変更したファイル全て（T3 の複数コミットやパス A の BE/FE ワーカーがそれぞれ触ったファイルも含む） |
+| 完了条件 | simplify が「修正なし」または「全修正適用済み」を返すこと |
+
+#### 呼び出しテンプレート
+
+base ブランチを検出してから args を組み立てて呼び出す:
+
+```
+# 事前に上記の検出ロジックで $BASE を決定する（例: feature/parent-ticket or origin/main）
+
+Skill(
+  skill="simplify",
+  args="Target: the full PR diff (`git diff ${BASE}...HEAD`, where base branch is '${BASE}'). Review every file changed in this PR for reuse, quality, and efficiency. Do NOT limit to the most recent edit. Do NOT touch files outside the PR diff."
+)
+```
+
+> **stacked-pr 運用時の注意**: 親PRがマージされて base が `origin/main` に変わるタイミングで差分範囲も変わる。QG-2 は常に「その時点の base」からの差分を対象にする（親PR未マージ時は親ブランチからの差分、マージ後は main からの差分）。
+
+#### フォールバック（`/simplify` が利用不可の場合）
+
+`simplify` スキルが未インストールの環境では、QGサブエージェント内で以下の3観点を手動チェックし問題があれば自動修正する:
 1. 既存コードとの重複排除
 2. 命名と可読性
 3. 不要な複雑さの除去
+
+> **⚠️ スコープ厳守**: simplify / 手動チェックのいずれも、**PR 全体の変更差分（`git diff $BASE...HEAD`）の中だけ**を対象とする。
+> - `$BASE` は上記の検出ロジックで決定（`origin/main` 固定ではなく stacked-pr の親ブランチを考慮）
+> - PR で変更したファイル全部（T3 の複数コミット・BE/FE ワーカーの全成果物）を見る
+> - PR 差分に含まれないファイルは触らない。関連ファイルで気づいた改善点は Decision Record に記録するに留め、このチケット/PR では触らない（CLAUDE.md の「変更スコープの厳守」に従う）
 
 ### QG-3: セルフレビュー（Two-stage）
 
@@ -515,13 +613,21 @@ Warning: {K}件（{L}件対応済み、{K-L}件DR記録）
 > 実装完了後の「最後の砦」として、レビュアーに出せるサイズか定量的に判定する。
 
 ```bash
+# base ブランチを検出（T1 で記録した値を優先）
+BASE=$(cat .claude/tmp/base-branch.txt 2>/dev/null \
+  || gh pr view --json baseRefName -q .baseRefName 2>/dev/null \
+  || git rev-parse --abbrev-ref @{upstream} 2>/dev/null \
+  || echo "origin/main")
+
 # pr-size-guard インストール済みなら以下が使える
-./scripts/measure-pr-size.sh origin/main
+./scripts/measure-pr-size.sh "$BASE"
 
 # または手動で
-git diff --shortstat origin/main...HEAD
-git diff --name-only origin/main...HEAD | wc -l
+git diff --shortstat "${BASE}...HEAD"
+git diff --name-only "${BASE}...HEAD" | wc -l
 ```
+
+> **⚠️ `origin/main` 固定禁止**: stacked-pr 運用時は親 feature ブランチが base になるため、T1 で記録した `$BASE` を使う。
 
 判定結果に応じてアクションを取る:
 
