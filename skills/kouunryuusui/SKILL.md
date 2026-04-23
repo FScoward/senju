@@ -34,6 +34,7 @@ PRを小さく保つための道具として本フローに統合する。
 | `stacked-pr` | 依存チェーン状PRの運用（base指定・rebase伝播等）| E4（Team ワーカーのPR作成）|
 | `pr-size-guard` | PR push直前の差分サイズ測定と分割判定 | T5（Push確認の直前）|
 | `split-on-the-fly` | 実装後に「大きすぎる」と気づいた時の事後分割手順 | T5（`pr-size-guard` で Red の時）|
+| `mihari` | テスト充足性を3並列レビュー×収束ループで検証 | QG-3 Stage1 パートB（テスト充足性ループ）|
 
 ## アーキテクチャ概要
 
@@ -120,9 +121,11 @@ kouunryuusui
 | T3 | 実装（Team worker） | `general-purpose` | sonnet |
 | T3 | テスト作成 | `general-purpose` | sonnet |
 | QG | 品質ゲート全体（フォーマット→ビルド→レビュー→修正ループ） | `general-purpose` | sonnet |
-| QG | コードレビュー + 要件適合（2並列の1） | `general-purpose` | sonnet |
-| QG | セキュリティ + テスト充足（2並列の2） | `general-purpose` | sonnet |
-| QG | 根本原因分析（修正3回目以降） | `general-purpose` | opus |
+| QG-3 Stage1 パートA | AC 適合チェック（Agent A 単独） | `general-purpose` | sonnet |
+| QG-3 Stage1 パートB | **テスト充足性ループ**（`mihari` スキル呼び出し） | `mihari` スキル | — |
+| QG-3 Stage2 Agent A | コードレビュー（ロジック、DDD、規約） | `general-purpose` | sonnet |
+| QG-3 Stage2 Agent B | セキュリティレビュー（OWASP、認証認可） | `general-purpose` | sonnet |
+| QG-4 | 根本原因分析（修正3回目以降） | `general-purpose` | opus |
 
 ### タスク複雑度シグナル（モデル選択の補助）
 
