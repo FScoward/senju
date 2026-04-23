@@ -275,11 +275,26 @@ BEとFEを並列で実行:
 
 `simplify` スキルは「変更されたコード」を対象に reuse / quality / efficiency の3観点でレビューし、問題があれば自動修正する（kouunryuusui の QG-2 の責務とほぼ同じ）。
 
+> **⚠️ 対象範囲の明示が必須**
+>
+> `simplify` のデフォルトは "recently modified code"（直近の編集）のみ。
+> kouunryuusui の QG-2 は **PR 全体の変更差分**（base ブランチからの全差分）を対象にする必要があるため、呼び出し時に対象範囲を明示的に指定する。
+
 | 呼び出し方 | 内容 |
 |----------|------|
-| スキル起動 | `Skill(skill="simplify")` — 直近の変更差分（`git diff origin/main...HEAD` 相当）を対象にレビュー＆修正 |
-| 対象範囲 | T3 で変更したファイルのみ（スコープ外に触らない） |
+| スキル起動 | `Skill(skill="simplify", args="<PR差分の指定>")` |
+| 対象範囲指定 | `git diff origin/main...HEAD` の全ファイルを対象にするよう args に明示<br>例: `"Review the full PR diff (git diff origin/main...HEAD), not just the most recent edits."` |
+| 対象ファイル | PR で変更したファイル全て（T3 の複数コミットやパス A の BE/FE ワーカーがそれぞれ触ったファイルも含む） |
 | 完了条件 | simplify が「修正なし」または「全修正適用済み」を返すこと |
+
+#### 呼び出しテンプレート
+
+```
+Skill(
+  skill="simplify",
+  args="Target: the full PR diff (`git diff origin/main...HEAD`). Review every file changed in this PR for reuse, quality, and efficiency. Do NOT limit to the most recent edit. Do NOT touch files outside the PR diff."
+)
+```
 
 #### フォールバック（`/simplify` が利用不可の場合）
 
@@ -288,8 +303,9 @@ BEとFEを並列で実行:
 2. 命名と可読性
 3. 不要な複雑さの除去
 
-> **⚠️ スコープ厳守**: simplify / 手動チェックのいずれも、**T3で変更したファイルの中だけ**を対象とする。
-> 関連ファイルで気づいた改善点は Decision Record に記録するに留め、このチケット/PR では触らない（CLAUDE.md の「変更スコープの厳守」に従う）。
+> **⚠️ スコープ厳守**: simplify / 手動チェックのいずれも、**PR 全体の変更差分（`git diff origin/main...HEAD`）の中だけ**を対象とする。
+> - PR で変更したファイル全部（T3 の複数コミット・BE/FE ワーカーの全成果物）を見る
+> - PR 差分に含まれないファイルは触らない。関連ファイルで気づいた改善点は Decision Record に記録するに留め、このチケット/PR では触らない（CLAUDE.md の「変更スコープの厳守」に従う）
 
 ### QG-3: セルフレビュー（Two-stage）
 
