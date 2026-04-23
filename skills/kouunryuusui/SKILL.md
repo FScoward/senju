@@ -35,6 +35,7 @@ PRを小さく保つための道具として本フローに統合する。
 | `pr-size-guard` | PR push直前の差分サイズ測定と分割判定 | T5（Push確認の直前）|
 | `split-on-the-fly` | 実装後に「大きすぎる」と気づいた時の事後分割手順 | T5（`pr-size-guard` で Red の時）|
 | `mihari` | テスト充足性を3並列レビュー×収束ループで検証 | QG-3 Stage1 パートB（テスト充足性ループ）|
+| `simplify` | 変更コードを reuse / quality / efficiency 観点でレビュー＆自動修正 | QG-2（コード品質改善）|
 
 ## アーキテクチャ概要
 
