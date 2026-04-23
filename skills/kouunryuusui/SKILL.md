@@ -89,6 +89,36 @@ kouunryuusui
 6. **修正タスクでもフローを守る**: 既存コードへの修正・バグ修正・仕様変更でも全ステップを実行する。各ステップには修正時の固有の目的がある（影響調査、整合性チェック、回帰防止等）。「既に存在する」はスキップの理由にならない
 7. **ACブラッシュアップは実装の前提条件**: GWT+Examples形式・7項目網羅性を満たしていないACで実装を始めてはならない。上位フロー（E1）を通らない下位フロー直接実行でも **T0（AC品質チェック）を必ず実施する**。形式不備のACをそのまま sprint-contract.md に転記しない
 
+## advisor 使用ポリシー
+
+> **advisor は「次の大きな決定を下す直前」に呼ぶ。設計後・実装後ではなく、設計前・分割前・Push前。**
+
+`advisor` ツールはセッション全体のコンテキストを見る上位レビュアー。高リスクな判断ポイントで呼び出し、セカンドオピニオンを得る。
+
+### 呼び出しポイント（Tier 別）
+
+| ポイント | Tier 1 | Tier 2 | Tier 3 |
+|---------|--------|--------|--------|
+| E1完了・E2開始前（AC妥当性） | スキップ | **呼ぶ** | **呼ぶ** |
+| E2b完了・E3開始前（設計妥当性） | スキップ | スキップ | **呼ぶ** |
+| E3完了・E4開始前（分割戦略） | スキップ | **呼ぶ** | **呼ぶ** |
+| QG-4 根本原因分析 | 修正3回目以降 | 修正3回目以降 | **修正1回目から** |
+| T5 Go/No-Go 前 | スキップ | **呼ぶ** | **呼ぶ** |
+
+### advisor の呼び出し方
+
+```
+advisor()
+# ※ advisor はパラメータ不要。現在の会話コンテキストを自動参照する。
+# 呼び出し前に判断材料（設計文書・分割計画等）を会話コンテキストに展開しておくこと。
+```
+
+### advisor の応答の扱い方
+
+- 具体的な懸念点が挙がった場合は、その点を修正してから次フェーズへ
+- 「問題なし」の場合は次フェーズへ進む
+- advisor の指摘とコードベース調査が矛盾する場合は、もう一度 advisor を呼んで reconcile を依頼する
+
 ### 品質原則（全フェーズ共通）
 
 - **リファクタリングは省略禁止**: TDDのRefactorステップを飛ばさない。Green後に必ず重複排除・命名改善・責務分離を行う
@@ -108,15 +138,15 @@ kouunryuusui
 
 | フェーズ | タスク | `subagent_type` | `model` |
 |---------|--------|-----------------|---------|
-| E1 | 仕様書→US+AC生成+品質チェック+補完 | `general-purpose` | sonnet |
+| E1 | 仕様書→US+AC生成+品質チェック+補完 | `general-purpose` | Tier 1: haiku / Tier 2: sonnet / Tier 3: opus |
 | E2 | 影響範囲調査（3並列） | `Explore` | haiku |
 | E2 | アーキテクチャ設計（低〜中） | `Plan` | sonnet |
 | E2 | アーキテクチャ設計（高） | `Plan` | opus |
 | E2 | 設計図作成（状態遷移図・シーケンス図等、Mermaid.js） | — (設計エージェントが兼務) | — |
-| E3 | チケット分割計画 + AC生成（SBE形式） | `general-purpose` | opus |
+| E3 | チケット分割計画 + AC生成（SBE形式） | `general-purpose` | Tier 1: sonnet / Tier 2〜3: opus |
 | E4 | Team オーケストレーション | `TeamCreate` + `SendMessage` | — |
 | E4 | ワーカー起動 | `general-purpose` (team_name指定) | sonnet |
-| T0 | AC品質チェック & ブラッシュアップ | `general-purpose` | sonnet |
+| T0 | AC品質チェック & ブラッシュアップ | `general-purpose` | Tier 1: haiku / Tier 2〜3: sonnet |
 | T1 | マイグレーション | `general-purpose` | sonnet |
 | T2 | モック/スケルトン生成 | `general-purpose` | sonnet |
 | T3 | 実装（Team worker） | `general-purpose` | sonnet |
@@ -124,9 +154,9 @@ kouunryuusui
 | QG | 品質ゲート全体（フォーマット→ビルド→レビュー→修正ループ） | `general-purpose` | sonnet |
 | QG-3 Stage1 パートA | AC 適合チェック（Agent A 単独） | `general-purpose` | sonnet |
 | QG-3 Stage1 パートB | **テスト充足性ループ**（`mihari` スキル呼び出し） | `mihari` スキル | — |
-| QG-3 Stage2 Agent A | コードレビュー（ロジック、DDD、規約） | `general-purpose` | sonnet |
-| QG-3 Stage2 Agent B | セキュリティレビュー（OWASP、認証認可） | `general-purpose` | sonnet |
-| QG-4 | 根本原因分析（修正3回目以降） | `general-purpose` | opus |
+| QG-3 Stage2 Agent A | コードレビュー（ロジック、DDD、規約） | `general-purpose` | Tier 1〜2: sonnet / Tier 3: opus |
+| QG-3 Stage2 Agent B | セキュリティレビュー（OWASP、認証認可） | `general-purpose` | opus（全Tier共通） |
+| QG-4 | 根本原因分析 | `general-purpose` | Tier 1〜2: 修正3回目以降→ opus / Tier 3: 修正1回目から opus |
 
 ### タスク複雑度シグナル（モデル選択の補助）
 
