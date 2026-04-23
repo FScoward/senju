@@ -270,6 +270,21 @@ sequenceDiagram
 
 E2の設計結果に基づき、実装可能な粒度にチケットを分割する。`general-purpose` (opus) で実行。
 
+### 分割戦略の選択（最初に判定）
+
+E&C（破壊的DB変更）以外でも、**機能追加・変更は小さく分割する**ことを優先する。E2 の設計結果と作業モード（新規/修正）から分割戦略を選ぶ:
+
+| 状況 | 推奨スキル | アクション |
+|------|----------|-----------|
+| **新機能追加**（BE/FE両方に跨る、実装期間2週間以上）| `feature-flag-strategy` | フラグで隠しながら5PR（Add/BE/FE/Enable/Remove）に分割 |
+| **機能の段階設計**（MVP→拡張で段階的に作りたい）| `vertical-slice` | Walking Skeleton + 3〜6スライスに縦分割 |
+| **既存コードの修正**（対象コードが複雑、関数長50行超 or ネスト3段以上）| `tidy-first` | 本体実装の前に Tidying を先行PRに切り出す |
+| **破壊的DB変更**（NOT NULLカラム追加、カラム名変更/型変更/削除）| 下記の E&C 分割テンプレート | DB Expand → App Expand → Migrate → App切替 → Contract |
+
+**複数該当する場合は組み合わせる**。例: 新機能追加 + 破壊的DB変更 → E&C（DB側）× Feature Flag（アプリ側）× Vertical Slice（機能の段階設計）。
+
+分割した結果が依存チェーン状のPRになる場合は **`stacked-pr`** スキルに従ってブランチ運用する（base指定・親PRマージ時の rebase 伝播等）。
+
 ### 最重要ルール: E&Cでの分割は必須
 
 > **破壊的DB変更がある場合、Expand / Migrate / Contract は絶対に別チケット・別PRにする。これを1つのPRに混ぜてはならない。**
