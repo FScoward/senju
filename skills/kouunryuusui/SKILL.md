@@ -20,6 +20,21 @@ Epic/USチケットを起点に、**設計→チケット分割→実装→PR作
 | `sier-dev` | 要件定義書〜内部設計書の生成 | E1（仕様書なし時） |
 | `managing-database-migrations` | DBマイグレーションファイル作成 | T1 |
 
+## 関連スキル（PR分割・サイズ管理）
+
+以下のスキルは必須ではないが、E3（チケット分割）・T5（Push確認）で参照することを推奨する。
+PRを小さく保つための道具として本フローに統合する。
+
+| スキル | 用途 | 使用フェーズ |
+|-------|------|------------|
+| `feature-flag-strategy` | 機能追加を5PR（Add/BE/FE/Enable/Remove）に段階分割 | E3（新機能追加時）|
+| `vertical-slice` | Walking Skeleton + 段階拡張で機能を縦スライス化 | E3（機能追加時の代替戦略）|
+| `tidy-first` | 整理（Tidying）を本体実装の前に先行PRに切り出す | E3（既存修正時）|
+| `data-model-designer` | T字形ER技法と Expand & Contract によるDBスキーマ設計 | E2c（DB変更あり時）|
+| `stacked-pr` | 依存チェーン状PRの運用（base指定・rebase伝播等）| E4（Team ワーカーのPR作成）|
+| `pr-size-guard` | PR push直前の差分サイズ測定と分割判定 | T5（Push確認の直前）|
+| `split-on-the-fly` | 実装後に「大きすぎる」と気づいた時の事後分割手順 | T5（`pr-size-guard` で Red の時）|
+
 ## アーキテクチャ概要
 
 ```

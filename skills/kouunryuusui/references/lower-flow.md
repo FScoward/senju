@@ -495,6 +495,32 @@ Warning: {K}件（{L}件対応済み、{K-L}件DR記録）
 
 **ここだけはユーザー確認で停止する。**
 
+### PRサイズチェック（最初に実行）
+
+> **デモ確認より先に、`pr-size-guard` スキルで差分サイズを測定する。**
+> 実装完了後の「最後の砦」として、レビュアーに出せるサイズか定量的に判定する。
+
+```bash
+# pr-size-guard インストール済みなら以下が使える
+./scripts/measure-pr-size.sh origin/main
+
+# または手動で
+git diff --shortstat origin/main...HEAD
+git diff --name-only origin/main...HEAD | wc -l
+```
+
+判定結果に応じてアクションを取る:
+
+| 判定 | アクション |
+|------|-----------|
+| 🟢 Green（全指標Green）| そのまま次の「デモ確認」へ進む |
+| 🟡 Yellow（1つ以上Yellow）| 分割を検討。分割不要と判断する場合は PR 説明文に理由を1行記載 |
+| 🔴 Red（1つ以上Red）| **分割必須** または **明示的な justification**。`split-on-the-fly` で事後分割するか、PR 説明文に「なぜ分割しないか」を段落で記載 |
+
+Red 判定時に分割する場合、`split-on-the-fly` の4パターン（A: コミット境界 / B: ファイル単位 / C: soft reset / D: push済み対応）から選ぶ。分割後は各PRで再度サイズ測定し、Green/Yellow に収まることを確認する。
+
+> **なぜ T5 で測るか**: E3で事前分割（`feature-flag-strategy` / `vertical-slice` / `tidy-first`）していても、実装中に想定より膨らむことがある。T5 は「レビュアーに出す前の最後の防波堤」。
+
 ### デモ確認（自律判断）
 
 > **Go/No-Go 判定前に: `references/quality-rules.md` の Verification Before Completion 鉄則を実行すること。**
