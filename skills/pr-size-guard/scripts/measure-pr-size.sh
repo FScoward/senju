@@ -11,7 +11,7 @@
 #   1 - 1つ以上Yellow
 #   2 - 1つ以上Red
 
-set -euo pipefail
+set -uo pipefail
 
 BASE="${1:-origin/main}"
 
