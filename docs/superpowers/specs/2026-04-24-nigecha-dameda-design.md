@@ -99,15 +99,15 @@ EOF
 }
 ```
 
-### ③ senju スキル（配布用）
+### ③ senju フック（配布用）
 
-他ユーザーが導入できるよう、Hook スクリプト本体と設定手順を senju スキルとして提供する。
+スキルではなくフックとして独立したディレクトリに配置する。  
+SKILL.md ではなく README.md でインストール手順を提供する。
 
 ```
-senju/skills/nigecha-dameda/
-├── SKILL.md          ← 説明・導入手順
-└── hooks/
-    └── nigecha-dameda.sh   ← スクリプト本体
+senju/hooks/nigecha-dameda/
+├── README.md              ← インストール手順・判断基準
+└── nigecha-dameda.sh      ← スクリプト本体
 ```
 
 ---
@@ -162,30 +162,10 @@ Claude: 「修正しました。」
 
 ---
 
-## senju スキル frontmatter（案）
-
-```yaml
----
-name: nigecha-dameda
-description: >
-  「後続チケットで対応します」と言って先送りにするサボタージュを防ぐ Stop Hook。
-  チケット番号の明記・ユーザー確認を強制する。
-  導入手順: SKILL.md に記載のスクリプトを ~/.claude/hooks/ に配置し settings.json に登録する。
-triggers:
-  - 先送り防止
-  - 逃げちゃダメだ
-  - nigecha-dameda
-  - サボタージュ防止
-type: hook
----
-```
-
----
-
 ## 実装ステップ
 
-1. `skills/nigecha-dameda/hooks/nigecha-dameda.sh` を作成
-2. `skills/nigecha-dameda/SKILL.md` を作成（frontmatter + 導入手順）
+1. `hooks/nigecha-dameda/nigecha-dameda.sh` を作成
+2. `hooks/nigecha-dameda/README.md` を作成（インストール手順・判断基準）
 3. `~/.claude/hooks/nigecha-dameda.sh` を配置（ローカル適用）
 4. `~/.claude/settings.json` に Stop Hook を登録
 5. 動作確認

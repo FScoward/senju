@@ -4,7 +4,7 @@
 
 **Goal:** 「後続チケットで対応します」と言って先送りにするサボタージュを防ぐ Stop Hook をローカルに導入し、senju スキルとして配布可能にする。
 
-**Architecture:** senju リポジトリに `skills/nigecha-dameda/` を作成しスクリプト本体と SKILL.md を格納する。同スクリプトを `~/.claude/hooks/nigecha-dameda.sh` にコピーし、`~/.claude/settings.json` の既存 Stop フック配列に追記する（非破壊）。
+**Architecture:** senju リポジトリに `hooks/nigecha-dameda/` を作成しスクリプト本体と README.md を格納する。同スクリプトを `~/.claude/hooks/nigecha-dameda.sh` にコピーし、`~/.claude/settings.json` の既存 Stop フック配列に追記する（非破壊）。
 
 **Tech Stack:** bash, JSON（Claude Code settings.json）
 
@@ -14,8 +14,8 @@
 
 | ファイル | 操作 | 役割 |
 |----------|------|------|
-| `skills/nigecha-dameda/hooks/nigecha-dameda.sh` | 新規作成（senju） | Hook スクリプト本体（配布用） |
-| `skills/nigecha-dameda/SKILL.md` | 新規作成（senju） | スキル説明・導入手順 |
+| `hooks/nigecha-dameda/nigecha-dameda.sh` | 新規作成（senju） | Hook スクリプト本体（配布用） |
+| `hooks/nigecha-dameda/README.md` | 新規作成（senju） | インストール手順・判断基準 |
 | `~/.claude/hooks/nigecha-dameda.sh` | 新規作成（ローカル） | 実際に発動するスクリプト |
 | `~/.claude/settings.json` | 修正（既存 Stop 配列に追記） | Hook 登録 |
 
@@ -24,17 +24,17 @@
 ### Task 1: Hook スクリプトを senju に作成
 
 **Files:**
-- Create: `skills/nigecha-dameda/hooks/nigecha-dameda.sh`
+- Create: `hooks/nigecha-dameda/nigecha-dameda.sh`
 
 - [ ] **Step 1: ディレクトリ作成**
 
 ```bash
-mkdir -p /Users/fumiyasu/ghq/github.com/FScoward/senju/skills/nigecha-dameda/hooks
+mkdir -p /Users/fumiyasu/ghq/github.com/FScoward/senju/hooks/nigecha-dameda/hooks
 ```
 
 - [ ] **Step 2: スクリプトを書く**
 
-`skills/nigecha-dameda/hooks/nigecha-dameda.sh` を以下の内容で作成する：
+`hooks/nigecha-dameda/nigecha-dameda.sh` を以下の内容で作成する：
 
 ```bash
 #!/bin/bash
@@ -62,13 +62,13 @@ EOF
 - [ ] **Step 3: 実行権限を付与**
 
 ```bash
-chmod +x /Users/fumiyasu/ghq/github.com/FScoward/senju/skills/nigecha-dameda/hooks/nigecha-dameda.sh
+chmod +x /Users/fumiyasu/ghq/github.com/FScoward/senju/hooks/nigecha-dameda/nigecha-dameda.sh
 ```
 
 - [ ] **Step 4: スクリプトの出力を確認**
 
 ```bash
-bash /Users/fumiyasu/ghq/github.com/FScoward/senju/skills/nigecha-dameda/hooks/nigecha-dameda.sh
+bash /Users/fumiyasu/ghq/github.com/FScoward/senju/hooks/nigecha-dameda/nigecha-dameda.sh
 ```
 
 期待する出力：
@@ -88,20 +88,20 @@ echo "exit: $?"
 
 ```bash
 cd /Users/fumiyasu/ghq/github.com/FScoward/senju
-git add skills/nigecha-dameda/hooks/nigecha-dameda.sh
+git add hooks/nigecha-dameda/nigecha-dameda.sh
 git commit -m "feat(nigecha-dameda): Hook スクリプト本体を追加"
 ```
 
 ---
 
-### Task 2: SKILL.md を作成
+### Task 2: README.md を作成
 
 **Files:**
-- Create: `skills/nigecha-dameda/SKILL.md`
+- Create: `hooks/nigecha-dameda/README.md`
 
-- [ ] **Step 1: SKILL.md を書く**
+- [ ] **Step 1: README.md を書く**
 
-`skills/nigecha-dameda/SKILL.md` を以下の内容で作成する：
+`hooks/nigecha-dameda/README.md` を以下の内容で作成する：
 
 ```markdown
 ---
@@ -193,17 +193,17 @@ Hook が発動してチケット番号の入力を求められれば導入成功
 
 ```bash
 cd /Users/fumiyasu/ghq/github.com/FScoward/senju
-bash scripts/check-frontmatter.sh skills/nigecha-dameda/SKILL.md
+bash scripts/check-frontmatter.sh hooks/nigecha-dameda/README.md
 ```
 
-期待: エラーなし（または SKILL.md が対象外なら正常終了）
+期待: エラーなし（または README.md が対象外なら正常終了）
 
 - [ ] **Step 3: コミット**
 
 ```bash
 cd /Users/fumiyasu/ghq/github.com/FScoward/senju
-git add skills/nigecha-dameda/SKILL.md
-git commit -m "feat(nigecha-dameda): SKILL.md を追加（導入手順・判断基準）"
+git add hooks/nigecha-dameda/README.md
+git commit -m "feat(nigecha-dameda): README.md を追加（導入手順・判断基準）"
 ```
 
 ---
@@ -223,7 +223,7 @@ ls ~/.claude/hooks/ 2>/dev/null || mkdir -p ~/.claude/hooks
 - [ ] **Step 2: スクリプトをローカルにコピー**
 
 ```bash
-cp /Users/fumiyasu/ghq/github.com/FScoward/senju/skills/nigecha-dameda/hooks/nigecha-dameda.sh \
+cp /Users/fumiyasu/ghq/github.com/FScoward/senju/hooks/nigecha-dameda/nigecha-dameda.sh \
    ~/.claude/hooks/nigecha-dameda.sh
 chmod +x ~/.claude/hooks/nigecha-dameda.sh
 ```
