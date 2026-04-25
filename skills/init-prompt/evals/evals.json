@@ -1,0 +1,26 @@
+{
+  "skill_name": "init-prompt",
+  "evals": [
+    {
+      "id": 0,
+      "eval_name": "vague-feature",
+      "prompt": "検索画面に並び替え機能を追加したい",
+      "expected_output": "Goal / Constraints / Acceptance criteria の3点セットを含む構造化プロンプト、または不足情報を引き出す質問",
+      "files": []
+    },
+    {
+      "id": 1,
+      "eval_name": "partial-constraints",
+      "prompt": "既存のDBスキーマを変えずに通知メール機能を追加したい。AWSのSESを使う予定",
+      "expected_output": "Goal と Constraints は整理済み、Acceptance criteria を引き出す構造化出力",
+      "files": []
+    },
+    {
+      "id": 2,
+      "eval_name": "goal-only",
+      "prompt": "Goal: ユーザー一覧にCSVエクスポートを追加する。あとはよしなに",
+      "expected_output": "Goal は埋まっており、Constraints と Acceptance criteria をヒアリングまたは推測して補完した構造化プロンプト",
+      "files": []
+    }
+  ]
+}
