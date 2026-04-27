@@ -1,15 +1,13 @@
 ---
-name: review-loop
-description: >-
-  PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。
-  「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」
-  「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。
-  6観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性）を並列レビューし、
-  修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。
-  指摘が出続ける限り止まらない点が parallel-review との違い。
+description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。 「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」 「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。 6観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性）を並列レビューし、 修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。 指摘が出続ける限り止まらない点が parallel-review との違い。
 license: MIT
+metadata:
+    github-path: skills/review-loop
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: c4dffa97b513e907fde28757ce353c282ef904eb
+name: review-loop
 ---
-
 # review-loop
 
 PRのAIレビューを指摘事項が**ゼロになるまで**自動ループする。
@@ -106,6 +104,28 @@ fi
 - 重大度を **Critical / Warning / Info** で分類
 - 修正案は Before/After のコード例を含める
 - 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
+- `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
+
+**`INLINE_COMMENTS_JSON:` ブロックのフォーマット**:
+
+```
+INLINE_COMMENTS_JSON:
+[
+  {
+    "path": "src/foo/Bar.kt",
+    "line": 42,
+    "side": "RIGHT",
+    "body": "**[Critical]** 問題の説明\n\n```kotlin\n// Before\nval x = ...\n// After\nval x = ...\n```"
+  }
+]
+INLINE_COMMENTS_JSON_END
+```
+
+- `path`: PR差分内のファイルパス（リポジトリルートからの相対パス）
+- `line`: 差分の右辺（変更後）の行番号。削除のみの場合は `side: "LEFT"`
+- `body`: GitHub Markdown 形式。先頭に `**[Critical]**` / `**[Warning]**` / `**[Info]**` を付ける
+- **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 2.5 でフィルタリングに使用）
+- 指摘がない場合は空配列 `[]` を出力する
 
 ### 1. coding-rules レビュアー
 
@@ -322,6 +342,49 @@ B) いいえ — 残指摘をサマリーして終了
 
 ---
 
+## Phase 2.5: インラインコメントをPRに投稿
+
+6エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、
+GitHub PR Review として一括投稿する。
+
+### 2.5-1. JSONの抽出・統合
+
+各エージェント出力の `INLINE_COMMENTS_JSON:` ～ `INLINE_COMMENTS_JSON_END` の間を抽出し、
+全コメントを1つの配列に統合する。**Info (`<!-- info-only -->`) はここで除外する**（Critical/Warning のみ投稿）。
+
+### 2.5-2. ヘッドコミットSHAを取得
+
+```bash
+COMMIT_ID=$(gh pr view {PR_NUMBER} --json headRefOid -q '.headRefOid')
+REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
+```
+
+### 2.5-3. PRレビューとしてインラインコメントを一括投稿
+
+```bash
+# comments を JSON で組み立てて gh api で送信
+# 例: jq を使って動的に組み立てる
+
+COMMENTS_JSON='[コメントの配列]'
+
+gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
+  --method POST \
+  --field commit_id="{COMMIT_ID}" \
+  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Info |\n|---|---|---|---|\n| コーディング規約 | X | Y | Z |\n| アーキテクチャ | X | Y | Z |\n| セキュリティ | X | Y | Z |\n| サイレント障害 | X | Y | Z |\n| 要件充足度 | X | Y | Z |\n| テスト妥当性 | X | Y | Z |\n\n**合計: {total_critical}C / {total_warning}W**" \
+  --field event="COMMENT" \
+  --field "comments={COMMENTS_JSON}"
+```
+
+投稿後にレスポンスの `html_url` をログ出力してリンクを確認する。
+
+### 2.5-4. 投稿エラー時の扱い
+
+- `line` がdiff範囲外の場合 → `position` 指定に切り替えて再試行
+- それでも失敗した場合 → そのコメントをPR本文コメント（`gh pr comment`）にフォールバック
+- **インラインコメント投稿失敗はレビューループを止めない**（修正フェーズは続行する）
+
+---
+
 ## Phase 3: 修正の適用
 
 > **⛔ `IS_OWN_PR=false` の場合はこの Phase を丸ごとスキップ。**
@@ -372,14 +435,15 @@ git push
 ```
 ## ✅ Review Loop 完了 — Critical/Warning がゼロになりました！
 
-| Iter | Critical | Warning | Info | Auto-fix |
-|------|----------|---------|------|----------|
-| #1   |        3 |       5 |    2 |        8 |
-| #2   |        1 |       2 |    1 |        3 |
-| #3   |        0 |       0 |    1 |        — |
+| Iter | Critical | Warning | Info | Auto-fix | PR Review |
+|------|----------|---------|------|----------|-----------|
+| #1   |        3 |       5 |    2 |        8 | https://github.com/…/pull/N#pullrequestreview-xxx |
+| #2   |        1 |       2 |    1 |        3 | https://github.com/…/pull/N#pullrequestreview-yyy |
+| #3   |        0 |       0 |    1 |        — | —                                                  |
 
 総修正: 11件 / 3イテレーション
 PRはレビュー観点でクリーンな状態です。
+各イテレーションのインラインコメントはPR上で確認できます。
 ```
 
 ### ⚠️ 残指摘あり（収束 or ユーザーが終了を選択）
@@ -387,11 +451,12 @@ PRはレビュー観点でクリーンな状態です。
 ```
 ## ⚠️ Review Loop 終了 — 手動対応が必要な指摘が残っています
 
-## 手動対応が必要な指摘
+## 手動対応が必要な指摘（PR上にインラインコメントあり）
 - [Critical] ServiceImpl.kt:45 - 設計判断が必要（...）
 - [Warning]  Controller.kt:12 - 仕様確認が必要（...）
 
-次のアクション: 上記を確認して対応方針を決めてください。
+PR Review URL: https://github.com/…/pull/N#pullrequestreview-zzz
+次のアクション: PR上のインラインコメントを確認して対応方針を決めてください。
 ```
 
 ---
@@ -400,6 +465,8 @@ PRはレビュー観点でクリーンな状態です。
 
 - **⛔ 他人のPRは修正禁止**: PRの作成者が自分でない場合、Edit・commit・push は一切行わない
 - **commit & push はイテレーション毎に実行**する（次のレビューが最新の差分を見るために必須）
-- **Info は修正対象外**（PRコメントへの記録のみ）
+- **インラインコメントはイテレーション毎に投稿**する（Phase 2.5 は各イテレーションで必ず実行）
+- **Info はインラインコメントから除外**する（`<!-- info-only -->` タグでフィルタリング）
 - **手動対応リストに入った指摘**は以降のループ判定から除外する
 - **このスキルは featureブランチのみ**で使用する（mainへの直接pushは行わない）
+- **インラインコメント投稿失敗はループを止めない**（フォールバックとして `gh pr comment` を使用）
