@@ -74,7 +74,8 @@ fi
 **`IS_OWN_PR=false` の場合（他人のPR）**:
 - レビューは全て実行する（指摘内容を報告する）
 - **コードへの修正・Edit・commit・push は一切行わない**
-- Phase 3 はスキップし、指摘内容をPRコメントとして投稿するのみ
+- Phase 3 はスキップし、代わりに **Phase 3b** でインラインコメントとして投稿する
+- 各指摘を該当ファイルの該当行に紐づけてGitHub Reviewとして1件で投稿する
 - ループは「修正なし → 指摘が減らないため1回で終了」となる
 
 ---
@@ -101,6 +102,7 @@ fi
 各レビュアーへの共通追加指示:
 - `gh pr diff {PR_NUMBER}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
 - 指摘は `ファイル名:行番号` 形式で具体的に
+- **行番号はdiff内の追加行（`+` で始まる行）に存在する行を優先して特定すること**（インラインコメント投稿に使用するため、diff外の行番号は後でフォールバックになる）
 - 重大度を **Critical / Warning / Info** で分類
 - 修正案は Before/After のコード例を含める
 - 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
@@ -425,6 +427,92 @@ git push
   ]
 }
 ```
+
+---
+
+## Phase 3b（他人のPR専用）: インラインコメント投稿
+
+> **このPhaseは `IS_OWN_PR=false` の場合のみ実行する。コード修正・commit・push は絶対に行わない。**
+
+指摘をまとめて1件の一般PRコメントにするのではなく、
+GitHub Review APIを使って各指摘を**該当ファイルの該当行に紐づけたインラインコメント**として投稿する。
+
+### 3b-1. 投稿前の準備
+
+```bash
+# HEADコミットSHA（Reviews APIに必須）
+COMMIT_SHA=$(gh pr view $PR_NUMBER --json headRefOid -q '.headRefOid')
+
+# リポジトリ情報
+OWNER=$(gh repo view --json owner -q '.owner.login')
+REPO=$(gh repo view --json name -q '.name')
+
+# diff内の追加行を確認（行番号の妥当性チェックに使用）
+gh pr diff $PR_NUMBER > /tmp/pr.diff
+```
+
+### 3b-2. 指摘のJSONへの変換
+
+各指摘の `ファイル名:行番号` を `comments[]` に変換する。
+
+**変換ルール**:
+- diff内の追加行（`+` 行）への指摘 → `comments[]` に追加（`"side": "RIGHT"`）
+- diff外・削除行・行番号不明の指摘 → `fallback_comments` リストに退避
+
+**投稿するJSONの構造**:
+```json
+{
+  "commit_id": "<COMMIT_SHA>",
+  "body": "## 🤖 AI レビュー（review-loop）\n\nCritical: X件 / Warning: Y件 / Info: Z件",
+  "event": "COMMENT",
+  "comments": [
+    {
+      "path": "src/main/kotlin/FooService.kt",
+      "line": 42,
+      "side": "RIGHT",
+      "body": "**[Critical]** 問題の説明\n\n**Before:**\n```kotlin\n// 修正前のコード\n```\n\n**After:**\n```kotlin\n// 修正後のコード\n```"
+    },
+    {
+      "path": "src/main/kotlin/BarController.kt",
+      "line": 17,
+      "side": "RIGHT",
+      "body": "**[Warning]** 問題の説明"
+    }
+  ]
+}
+```
+
+### 3b-3. インラインコメントをバッチ投稿
+
+```bash
+# 1リクエストで全インラインコメントを投稿
+gh api repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews \
+  --method POST \
+  --input /tmp/review-inline.json
+```
+
+**エラーハンドリング**:
+- 422 が返った場合 → 特定の `comments[]` エントリがdiff外。そのエントリを除いて再投稿し、除いた指摘は `fallback_comments` に移す
+
+### 3b-4. diff外指摘のフォールバック投稿
+
+diff内に存在しない行への指摘（既存コードへの言及など）は、
+インラインとして投稿できないため、まとめて一般PRコメントとして追加する:
+
+```bash
+gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなかった指摘）
+
+以下の指摘はdiff外のため、インラインコメントで紐づけできませんでした。
+
+- **[Critical]** FooService.kt 付近: 問題の説明
+- **[Warning]** BarHelper.kt 付近: 問題の説明
+"
+```
+
+### 3b-5. Phase 4へ
+
+他人のPRはコードを修正できないため、Phase 3b 完了後は **1回でPhase 4へ進む**。
+（コードが変わらない → 再レビューしても同じ指摘が出る → ループしても無意味）
 
 ---
 
