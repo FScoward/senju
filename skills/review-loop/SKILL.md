@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: d7e5a671f7181ce4b86c29cefd7993ec57b1692d
+    github-tree-sha: e89993889fa53df380d51093ba237348791fad1e
 name: review-loop
 ---
 # review-loop
@@ -79,6 +79,33 @@ else
   PR_BODY=$(cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null || echo "")
 fi
 ```
+
+### diffサイズ判定（モデル選択に使用）
+
+```bash
+# diff の行数を取得してサイズを判定
+DIFF_LINES=$(eval "$DIFF_CMD" | wc -l | tr -d ' ')
+if [ "$DIFF_LINES" -lt 200 ]; then
+  DIFF_SIZE="small"   # 200行未満: coding-rules も haiku 可
+else
+  DIFF_SIZE="large"   # 200行以上: coding-rules は sonnet
+fi
+```
+
+**モデル選択ルール（コンテキスト消費を抑えるため）**:
+
+| レビュアー | Iter 1 + diff large | Iter 1 + diff small | Iter 2以降 |
+|---|---|---|---|
+| coding-rules | **sonnet** | **haiku** | **haiku** |
+| architecture | **sonnet** | sonnet | sonnet |
+| security | **sonnet** | sonnet | sonnet |
+| silent-failure | **haiku** | haiku | haiku |
+| requirements | **sonnet** | sonnet | sonnet |
+| test-adequacy | **sonnet** | sonnet | sonnet |
+
+- `silent-failure` は常にhaiku（パターン検出が主体で判断不要）
+- `coding-rules` はIteration 1 かつ diff が大きい場合のみsonnet（初回網羅後は差分確認のみ）
+- `architecture / security / requirements / test-adequacy` は常にsonnet（意味理解・判断が必要）
 
 ### 自分のPRかどうかの判定（修正可否の決定）
 
@@ -163,9 +190,12 @@ INLINE_COMMENTS_JSON_END
 
 ### 1. coding-rules レビュアー
 
+**モデル選択**: `DIFF_SIZE == "small"` または `N >= 2` の場合は `model: "haiku"`、それ以外は `model: "sonnet"`
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: (N == 1 && DIFF_SIZE == "large") ? "sonnet" : "haiku",
   run_in_background: true,
   description: "コーディング規約レビュー（iteration {N}）",
   prompt: """
@@ -197,9 +227,12 @@ Agent(
 
 ### 2. architecture レビュアー
 
+**モデル選択**: 常に `model: "sonnet"`（レイヤー依存・責務判断は意味理解が必要）
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: "sonnet",
   run_in_background: true,
   description: "アーキテクチャレビュー（iteration {N}）",
   prompt: """
@@ -225,9 +258,12 @@ Agent(
 
 ### 3. security レビュアー
 
+**モデル選択**: 常に `model: "sonnet"`（見逃しコストが高い・意味理解必須）
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: "sonnet",
   run_in_background: true,
   description: "セキュリティレビュー（iteration {N}）",
   prompt: """
@@ -254,9 +290,12 @@ Agent(
 
 ### 4. silent-failure レビュアー
 
+**モデル選択**: 常に `model: "haiku"`（空catch・戻り値無視・switch網羅漏れはパターン検出で十分）
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: "haiku",
   run_in_background: true,
   description: "サイレント障害検出（iteration {N}）",
   prompt: """
@@ -284,9 +323,12 @@ Agent(
 
 ### 5. requirements レビュアー
 
+**モデル選択**: 常に `model: "sonnet"`（AC照合は意味理解が必要）
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: "sonnet",
   run_in_background: true,
   description: "要件充足度レビュー（iteration {N}）",
   prompt: """
@@ -318,9 +360,12 @@ Agent(
 
 ### 6. test-adequacy レビュアー
 
+**モデル選択**: 常に `model: "sonnet"`（AC↔テストの照合は意味理解が必要。haiku だと未カバーを見逃しやすい）
+
 ```
 Agent(
   subagent_type: "general-purpose",
+  model: "sonnet",
   run_in_background: true,
   description: "テストケース妥当性レビュー（iteration {N}）",
   prompt: """
