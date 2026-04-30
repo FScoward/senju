@@ -488,20 +488,36 @@ mihari が FAIL または ESCALATE を返した場合、mihari のログ（scrat
 
 #### ステージ2: Code Quality（コード品質チェック）
 
-ステージ1 PASS後に**2並列**で実行。
+ステージ1 PASS後に **`review-loop` スキルを呼び出す**。
 
-| Agent | 観点 | `model` |
-|-------|------|---------|
-| A | コードレビュー（ロジック、DDD、規約） | Tier 1〜2: sonnet / Tier 3: opus |
-| B | セキュリティレビュー（OWASP、認証認可） | opus（全Tier共通） |
+```
+Skill(skill="review-loop")
+```
 
-### QG-4: 修正ループ（max 5回）
+PR が存在しない QG 段階では review-loop は自動的に **PR なしモード**で動作する:
+- `git diff $BASE...HEAD` をローカル diff として使用（`$BASE` は `.claude/tmp/base-branch.txt` から検出）
+- Critical/Warning がゼロになるまで自動修正ループ（最大 5 回）
+- commit のみ行い push しない（push は T5 の Push 確認まで保留）
+- Phase 2.5（GitHub インラインコメント投稿）はスキップ
 
-QG-1〜QG-3で問題が検出された場合、QGサブエージェント内で修正ループを実行:
+> **QG-3 Stage 1（mihari）との役割分担**: requirements / test-adequacy 観点は Stage 1 で mihari が担当済み。review-loop の同観点での指摘は参考情報として扱ってよい。
+
+review-loop 完了後の分岐:
+
+| review-loop の返却 | アクション |
+|-------------------|-----------|
+| PASS（Critical=0 + Warning=0） | **QG-4 をスキップ**して QG 完了シグナルへ |
+| 手動対応が必要（収束 or max 5 到達） | QG-4 エスカレーションへ |
+
+### QG-4: エスカレーション（review-loop 収束時のみ）
+
+> **review-loop が PASS を返した場合、QG-4 はスキップして QG 完了シグナルへ進む。**
+> QG-4 は review-loop の修正ループが収束した（自動修正できない指摘が max 5 回残り続けた）場合のみ実行する。
+> QG-4 では自動修正ループは行わない — review-loop が 5 回試みて収束しなかった問題はさらなる自動修正では解決しない。
 
 | パラメータ | 値 |
 |-----------|-----|
-| max_iterations | **5** |
+| max_iterations | **5**（review-loop の内部ループ回数に準ずる） |
 | 完了シグナル | 品質全PASS + Critical 0件 |
 
 | Tier | イテレーション 1〜2（修正1〜2回目） | イテレーション 3〜5（修正3回目以降） |

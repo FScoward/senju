@@ -1,16 +1,19 @@
 ---
-description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。 「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」 「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。 6観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性）を並列レビューし、 修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。 指摘が出続ける限り止まらない点が parallel-review との違い。
+description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。6観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性）を並列レビューし、修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
 license: MIT
 metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: c4dffa97b513e907fde28757ce353c282ef904eb
+    github-tree-sha: d7e5a671f7181ce4b86c29cefd7993ec57b1692d
 name: review-loop
 ---
 # review-loop
 
 PRのAIレビューを指摘事項が**ゼロになるまで**自動ループする。
+
+**PR ありモード**: `gh pr diff` で PR 差分を取得し、各イテレーション後に GitHub インラインコメントを投稿する。  
+**PR なしモード**: `git diff $BASE...HEAD` でローカル差分を使用。インラインコメント投稿をスキップし、commit のみ行い push は行わない（kouunryuusui QG からの呼び出しを想定）。
 
 `/parallel-review` が「1サイクル（Critical再チェック込み）」で終わるのに対し、
 このスキルは「Critical/Warning がゼロになるまで何度でも繰り返す」。
@@ -36,7 +39,7 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
   ├─ 同じ指摘が収束（自動修正不可）？
   │    YES → ⚠️ 手動対応サマリー（Phase 4へ）
   │
-  └─ それ以外 → 修正を適用 → commit & push → Iteration N+1
+  └─ それ以外 → 修正を適用 → commit（PR ありの場合のみ push）→ Iteration N+1
 ```
 
 **収束チェック（無限ループ防止）**:
@@ -47,27 +50,50 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
 
 ## Phase 0: 初期化
 
+### モード判定（最初に実行）
+
 ```bash
-# PR番号
-PR_NUMBER=$(gh pr view --json number -q '.number')
+# PR の存在確認
+PR_NUMBER=$(gh pr view --json number -q '.number' 2>/dev/null)
+if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+  HAS_PR=true
+else
+  HAS_PR=false
+  PR_NUMBER=""
+fi
 
 # チケットID（ブランチ名から抽出、なければ空文字）
-TICKET_ID=$(git branch --show-current | grep -oE '[A-Z]+-[0-9]+' || echo "")
+TICKET_ID=$(git branch --show-current | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo "")
 
-# PR description 取得（テストケース確認用）
-gh pr view $PR_NUMBER --json body -q '.body'
+if [ "$HAS_PR" = "true" ]; then
+  # PR ありモード
+  DIFF_CMD="gh pr diff ${PR_NUMBER}"
+  PR_BODY=$(gh pr view $PR_NUMBER --json body -q '.body' 2>/dev/null || echo "")
+else
+  # PR なしモード: ベースブランチを検出してローカル diff を使う
+  BASE=$(cat .claude/tmp/base-branch.txt 2>/dev/null \
+    || git rev-parse --abbrev-ref @{upstream} 2>/dev/null \
+    || echo "origin/main")
+  DIFF_CMD="git diff ${BASE}...HEAD"
+  # AC 情報: sprint-contract.md → scratch.md → なし の優先順で取得
+  PR_BODY=$(cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null || echo "")
+fi
 ```
 
 ### 自分のPRかどうかの判定（修正可否の決定）
 
 ```bash
-PR_AUTHOR=$(gh pr view $PR_NUMBER --json author -q '.author.login')
-CURRENT_USER=$(gh api user -q '.login')
-
-if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then
-  IS_OWN_PR=true   # 修正・commit・push を実行してよい
+if [ "$HAS_PR" = "true" ]; then
+  PR_AUTHOR=$(gh pr view $PR_NUMBER --json author -q '.author.login')
+  CURRENT_USER=$(gh api user -q '.login')
+  if [ "$PR_AUTHOR" = "$CURRENT_USER" ]; then
+    IS_OWN_PR=true
+  else
+    IS_OWN_PR=false
+  fi
 else
-  IS_OWN_PR=false  # レビュー・報告のみ。コードへの修正は絶対に禁止
+  # PR なしモード: 常に自分のコード
+  IS_OWN_PR=true
 fi
 ```
 
@@ -84,6 +110,9 @@ fi
 ```json
 {
   "pr_number": 0,
+  "has_pr": true,
+  "base": "origin/main",
+  "diff_cmd": "gh pr diff 123",
   "ticket_id": "",
   "is_own_pr": true,
   "max_iterations": 5,
@@ -100,15 +129,18 @@ fi
 **1メッセージで6つのAgentを同時起動**（`run_in_background: true`）。
 
 各レビュアーへの共通追加指示:
-- `gh pr diff {PR_NUMBER}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
+- `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
+  - PR ありモード: `gh pr diff {PR_NUMBER}`
+  - PR なしモード: `git diff {BASE}...HEAD`
 - 指摘は `ファイル名:行番号` 形式で具体的に
-- **行番号はdiff内の追加行（`+` で始まる行）に存在する行を優先して特定すること**（インラインコメント投稿に使用するため、diff外の行番号は後でフォールバックになる）
+- **行番号はdiff内の追加行（`+` で始まる行）に存在する行を優先して特定すること**（PR ありモード: インラインコメント投稿に使用）
 - 重大度を **Critical / Warning / Info** で分類
 - 修正案は Before/After のコード例を含める
 - 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
-- `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
+- **PR ありモードのみ**: `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
+- **PR なしモード**: `INLINE_COMMENTS_JSON:` ブロックの出力は不要
 
-**`INLINE_COMMENTS_JSON:` ブロックのフォーマット**:
+**`INLINE_COMMENTS_JSON:` ブロックのフォーマット**（PR ありモードのみ）:
 
 ```
 INLINE_COMMENTS_JSON:
@@ -123,7 +155,7 @@ INLINE_COMMENTS_JSON:
 INLINE_COMMENTS_JSON_END
 ```
 
-- `path`: PR差分内のファイルパス（リポジトリルートからの相対パス）
+- `path`: 差分内のファイルパス（リポジトリルートからの相対パス）
 - `line`: 差分の右辺（変更後）の行番号。削除のみの場合は `side: "LEFT"`
 - `body`: GitHub Markdown 形式。先頭に `**[Critical]**` / `**[Warning]**` / `**[Info]**` を付ける
 - **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 2.5 でフィルタリングに使用）
@@ -139,10 +171,10 @@ Agent(
   prompt: """
   あなたはコーディング規約の専門レビュアーです。
 
-  PR #{PR_NUMBER} の変更差分をコーディング規約の観点でレビューしてください。
+  変更差分をコーディング規約の観点でレビューしてください。
 
   手順:
-  1. `gh pr diff {PR_NUMBER}` でPR差分を取得
+  1. `{DIFF_CMD}` で差分を取得
   2. 変更ファイルを読み取り、以下の観点でレビュー
 
   チェック観点:
@@ -173,10 +205,10 @@ Agent(
   prompt: """
   あなたはアーキテクチャの専門レビュアーです。
 
-  PR #{PR_NUMBER} の変更差分をアーキテクチャ観点でレビューしてください。
+  変更差分をアーキテクチャ観点でレビューしてください。
 
   手順:
-  1. `gh pr diff {PR_NUMBER}` でPR差分を取得
+  1. `{DIFF_CMD}` で差分を取得
   2. 変更ファイルを読み取り、以下の観点でレビュー
 
   重点チェック:
@@ -201,10 +233,10 @@ Agent(
   prompt: """
   あなたはセキュリティ専門のレビュアーです。
 
-  PR #{PR_NUMBER} の変更差分をセキュリティ観点でレビューしてください。
+  変更差分をセキュリティ観点でレビューしてください。
 
   手順:
-  1. `gh pr diff {PR_NUMBER}` でPR差分を取得
+  1. `{DIFF_CMD}` で差分を取得
   2. 変更ファイルを読み取り、以下の観点でレビュー
 
   チェック観点:
@@ -230,10 +262,10 @@ Agent(
   prompt: """
   あなたはサイレント障害の検出に特化したレビュアーです。
 
-  PR #{PR_NUMBER} の変更差分でサイレント障害リスクを検出してください。
+  変更差分でサイレント障害リスクを検出してください。
 
   手順:
-  1. `gh pr diff {PR_NUMBER}` でPR差分を取得
+  1. `{DIFF_CMD}` で差分を取得
   2. 以下のパターンを検出
 
   検出パターン:
@@ -260,14 +292,21 @@ Agent(
   prompt: """
   あなたは要件充足度を検証する専門レビュアーです。
 
-  チケット {TICKET_ID} のACと PR #{PR_NUMBER} の実装を照合してください。
+  チケット {TICKET_ID} のACと変更差分の実装を照合してください。
   （チケットIDがない場合はこのレビューをスキップして FINDINGS: 0C 0W 0I と返す）
 
+  【PR ありモード（PR_NUMBER が指定されている場合）】
   手順:
-  1. `gh pr diff {PR_NUMBER}` でPR差分を取得
-  2. `gh pr view {PR_NUMBER} --json body -q '.body'` でPR descriptionを取得
-  3. PRのAC項目を1件ずつ検証
-  4. 漏れ・乖離・スコープクリープを検出
+  1. `{DIFF_CMD}` でPR差分を取得
+  2. `gh pr view {PR_NUMBER} --json body -q '.body'` でPR descriptionのAC項目を取得
+  3. 各AC項目を実装と照合し、漏れ・乖離・スコープクリープを検出
+
+  【PR なしモード（PR_NUMBER が空の場合）】
+  手順:
+  1. `{DIFF_CMD}` でローカル差分を取得
+  2. `cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null` でAC情報を取得
+  3. AC情報が取得できない場合は FINDINGS: 0C 0W 0I と返す
+  4. 各AC項目を実装と照合し、漏れ・乖離・スコープクリープを検出
 
   出力形式:
   各ACに対して: AC項目 / 充足状態（✅/⚠️/❌）/ 対応実装箇所
@@ -286,9 +325,20 @@ Agent(
   description: "テストケース妥当性レビュー（iteration {N}）",
   prompt: """
   あなたはQAの専門レビュアーです。
-  PR description のテストケースがACを適切にカバーしているか検証してください。
+  テストケースがACを適切にカバーしているか検証してください。
 
-  PR description: {gh pr view {PR_NUMBER} --json body -q '.body' の出力}
+  【PR ありモード（PR_NUMBER が指定されている場合）】
+  手順:
+  1. `{DIFF_CMD}` で差分を取得
+  2. `gh pr view {PR_NUMBER} --json body -q '.body'` でPR descriptionのテストケースを取得
+  3. 実装されたテストファイルの内容を確認
+
+  【PR なしモード（PR_NUMBER が空の場合）】
+  手順:
+  1. `{DIFF_CMD}` でローカル差分を取得
+  2. `cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null` でAC/テスト基準を取得
+  3. 差分内の *Test.kt / *.test.ts / *.test.tsx ファイルを確認
+  4. AC情報が取得できない場合は FINDINGS: 0C 0W 0I と返す
 
   チェック観点:
   - AC未カバーのテストケース
@@ -345,6 +395,9 @@ B) いいえ — 残指摘をサマリーして終了
 ---
 
 ## Phase 2.5: インラインコメントをPRに投稿
+
+> **⛔ `HAS_PR=false`（PR なしモード）の場合はこのPhaseをスキップ。**
+> PR が存在しない状態ではインラインコメントを投稿できない。GitHub 連携は PR 作成後に行う。
 
 6エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、
 GitHub PR Review として一括投稿する。
@@ -406,7 +459,12 @@ gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
 ```bash
 git add -A
 git commit -m "review-loop: iter{N} - fix {X}C {Y}W ({ファイル名の簡単なサマリ})"
-git push
+
+# PR ありモードのみ push する
+# PR なしモード（kouunryuusui QG 等）では push しない（T5 の Push 確認まで push を保留）
+if [ "$HAS_PR" = "true" ]; then
+  git push
+fi
 ```
 
 ### 3-3. 状態更新
@@ -518,7 +576,7 @@ gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなか
 
 ## Phase 4: 完了レポート
 
-### ✅ クリーン達成
+### ✅ クリーン達成（PR ありモード）
 
 ```
 ## ✅ Review Loop 完了 — Critical/Warning がゼロになりました！
@@ -534,17 +592,37 @@ PRはレビュー観点でクリーンな状態です。
 各イテレーションのインラインコメントはPR上で確認できます。
 ```
 
+### ✅ クリーン達成（PR なしモード）
+
+```
+## ✅ Review Loop 完了 — Critical/Warning がゼロになりました！
+
+| Iter | Critical | Warning | Info | Auto-fix | Commit  |
+|------|----------|---------|------|----------|---------|
+| #1   |        3 |       5 |    2 |        8 | abc1234 |
+| #2   |        1 |       2 |    1 |        3 | def5678 |
+| #3   |        0 |       0 |    1 |        — | —       |
+
+総修正: 11件 / 3イテレーション
+コードはレビュー観点でクリーンな状態です。
+※ PR なしモードで実行。push は呼び出し元（T5 Push 確認）で行います。
+```
+
 ### ⚠️ 残指摘あり（収束 or ユーザーが終了を選択）
 
 ```
 ## ⚠️ Review Loop 終了 — 手動対応が必要な指摘が残っています
 
-## 手動対応が必要な指摘（PR上にインラインコメントあり）
+## 手動対応が必要な指摘
 - [Critical] ServiceImpl.kt:45 - 設計判断が必要（...）
 - [Warning]  Controller.kt:12 - 仕様確認が必要（...）
 
+{PR ありモードの場合}
 PR Review URL: https://github.com/…/pull/N#pullrequestreview-zzz
 次のアクション: PR上のインラインコメントを確認して対応方針を決めてください。
+
+{PR なしモードの場合}
+次のアクション: 上記の指摘を手動で確認して対応してください。
 ```
 
 ---
@@ -552,9 +630,12 @@ PR Review URL: https://github.com/…/pull/N#pullrequestreview-zzz
 ## 注意事項
 
 - **⛔ 他人のPRは修正禁止**: PRの作成者が自分でない場合、Edit・commit・push は一切行わない
-- **commit & push はイテレーション毎に実行**する（次のレビューが最新の差分を見るために必須）
-- **インラインコメントはイテレーション毎に投稿**する（Phase 2.5 は各イテレーションで必ず実行）
+- **PR ありモード: commit & push はイテレーション毎に実行**する（次のレビューが最新の差分を見るために必須）
+- **PR なしモード: commit のみ、push は行わない**（呼び出し元 T5 の Push 確認まで push を保留）
+- **PR ありモード: インラインコメントはイテレーション毎に投稿**する（Phase 2.5 は各イテレーションで必ず実行）
+- **PR なしモード: Phase 2.5（インラインコメント投稿）はスキップ**する
 - **Info はインラインコメントから除外**する（`<!-- info-only -->` タグでフィルタリング）
 - **手動対応リストに入った指摘**は以降のループ判定から除外する
 - **このスキルは featureブランチのみ**で使用する（mainへの直接pushは行わない）
 - **インラインコメント投稿失敗はループを止めない**（フォールバックとして `gh pr comment` を使用）
+- **kouunryuusui QG からの呼び出し時**: PR なしモードで動作する。QG-3 Stage 1（mihari）で既にテスト充足性・AC 適合を確認済みのため、requirements / test-adequacy 観点での指摘は参考情報として扱ってよい

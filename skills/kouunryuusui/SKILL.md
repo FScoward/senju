@@ -1,11 +1,15 @@
 ---
-name: kouunryuusui
-license: MIT
-description: "Epic/USチケットから設計→チケット分割→実装→PR作成まで自律的に走り続ける2層構造の統合開発ワークフロー。上位フロー（設計・分割）と下位フロー（実装・PR）を分離し、E&Cも設計に基づいて整理する。明示的に「/kouunryuusui」と指示された場合のみ使用。"
 aliases:
-  - kurs
+    - kurs
+description: Epic/USチケットから設計→チケット分割→実装→PR作成まで自律的に走り続ける2層構造の統合開発ワークフロー。上位フロー（設計・分割）と下位フロー（実装・PR）を分離し、E&Cも設計に基づいて整理する。明示的に「/kouunryuusui」と指示された場合のみ使用。
+license: MIT
+metadata:
+    github-path: skills/kouunryuusui
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: 713db37b2fa822f310f18b68b82fff9a7b9008f1
+name: kouunryuusui
 ---
-
 # 行雲流水（kouunryuusui） $ARGUMENTS
 
 Epic/USチケットを起点に、**設計→チケット分割→実装→PR作成**まで自律的に走り続ける開発ワークフロー。
@@ -44,6 +48,7 @@ PRを小さく保つための道具として本フローに統合する。
 | `split-on-the-fly` | 実装後に「大きすぎる」と気づいた時の事後分割手順 | T5（`pr-size-guard` で Red の時）|
 | `mihari` | テスト充足性を3並列レビュー×収束ループで検証 | QG-3 Stage1 パートB（テスト充足性ループ）|
 | `simplify` | 変更コードを reuse / quality / efficiency 観点でレビュー＆自動修正 | QG-2（コード品質改善）|
+| `review-loop` | 6観点並列レビュー × 指摘ゼロまで自動修正ループ（PR なしモード対応） | QG-3 Stage2（コード品質チェック）|
 
 ## アーキテクチャ概要
 
@@ -170,8 +175,7 @@ advisor()
 | QG | 品質ゲート全体（フォーマット→ビルド→レビュー→修正ループ） | `general-purpose` | sonnet |
 | QG-3 Stage1 パートA | AC 適合チェック（Agent A 単独） | `general-purpose` | sonnet |
 | QG-3 Stage1 パートB | **テスト充足性ループ**（`mihari` スキル呼び出し） | `mihari` スキル | — |
-| QG-3 Stage2 Agent A | コードレビュー（ロジック、DDD、規約） | `general-purpose` | Tier 1〜2: sonnet / Tier 3: opus |
-| QG-3 Stage2 Agent B | セキュリティレビュー（OWASP、認証認可） | `general-purpose` | opus（全Tier共通） |
+| QG-3 Stage2 | コード品質チェック（`review-loop` スキル呼び出し） | `review-loop` スキル | — |
 | QG-4 | 根本原因分析 | `general-purpose` | Tier 1〜2: 修正3回目以降で opus / Tier 3: 修正1回目から opus |
 
 ### タスク複雑度シグナル（モデル選択の補助）
