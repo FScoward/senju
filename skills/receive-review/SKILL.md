@@ -20,25 +20,87 @@ PRのレビュー指摘を受け取り、「何を・どう直すか」を素早
 
 ---
 
-## Step 1: 指摘内容の収集
+## Step 1: 全コメント面の網羅取得
 
-ユーザーからの入力を受け取る。
+GitHub PR のコメントは6面ある。以下のコマンドで全面を取得してから分類に進む。
 
-**PR URL の場合:**
+| 面 | 内容 | 取得手段 |
+|----|------|---------|
+| PR本文 | 背景・変更意図 | REST |
+| 一般コメント | PR全体への返信 | REST |
+| レビューサマリー | Approve/Request Changes 時のコメント | REST |
+| インラインコメント | コード行への指摘（**最重要**） | GraphQL |
+| 解決済み状態 | スレッドが Resolved か否か | GraphQL のみ取得可能 |
+| suggestion ブロック | `` ```suggestion `` で提案された差分 | body 内をパース |
+
+### PR URL / PR番号を受け取った場合
+
+**① PR本文・一般コメント・レビューサマリー（REST）**
 ```bash
-gh pr view <PR番号> --comments --json body,comments -q '
-  "PR本文: " + .body + "\n\n" +
-  (.comments | map("[@" + .author.login + "]: " + .body) | join("\n\n"))
+PR_NUMBER=<番号>
+
+gh pr view $PR_NUMBER --json title,body,comments,reviews --jq '
+  "## PR本文\n" + .body + "\n\n" +
+  "## 一般コメント (" + (.comments | length | tostring) + "件)\n" +
+  (.comments | map("[@\(.author.login)]: \(.body)") | join("\n\n")) + "\n\n" +
+  "## レビューサマリー (" + (.reviews | map(select(.body != "")) | length | tostring) + "件)\n" +
+  (.reviews | map(select(.body != "")) | map("[@\(.author.login)] \(.state): \(.body)") | join("\n\n"))
 '
 ```
 
-**インラインコメントも含める場合:**
+**② インラインコメント・スレッド解決状態（GraphQL）**
 ```bash
-gh api repos/<owner>/<repo>/pulls/<PR番号>/comments \
-  --jq '.[] | "[\(.path):\(.line)] @\(.user.login): \(.body)"'
+# owner/repo を自動解決
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+OWNER=$(echo $OWNER_REPO | cut -d'/' -f1)
+REPO=$(echo $OWNER_REPO | cut -d'/' -f2)
+PR_NUMBER=<番号>
+
+gh api graphql -f query='
+query($owner:String!, $repo:String!, $number:Int!) {
+  repository(owner:$owner, name:$repo) {
+    pullRequest(number:$number) {
+      reviewThreads(first:100) {
+        nodes {
+          isResolved
+          isOutdated
+          path
+          line
+          originalLine
+          comments(first:50) {
+            nodes {
+              author { login }
+              body
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}' -F owner=$OWNER -F repo=$REPO -F number=$PR_NUMBER \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes[] |
+    "[\(.path):\(.line // .originalLine // "?")] " +
+    (if .isResolved then "✅[解決済み] " else "🔴[未解決] " end) +
+    (if .isOutdated then "⚠️[outdated] " else "" end) +
+    "\n" +
+    (.comments.nodes | map("  @\(.author.login): \(.body)") | join("\n"))'
 ```
 
-**テキスト貼り付けの場合:** ユーザーが貼ったテキストをそのまま処理する。
+**③ bot コメントの分離（Copilot Review / CodeRabbit 等が多い場合）**
+
+取得結果に bot コメントが多く埋もれる場合は、以下で人間の指摘だけ絞り込む：
+```bash
+# 上記 GraphQL クエリ結果を bot ログイン名でフィルタ（例: copilot-pull-request-reviewer）
+--jq '.data.repository.pullRequest.reviewThreads.nodes[] |
+  select(.comments.nodes[0].author.login | test("bot|copilot|coderabbit"; "i") | not) |
+  ...'
+```
+
+### テキスト貼り付けの場合
+
+ユーザーが貼ったテキストをそのまま処理する。インラインコメントが含まれる場合は
+`[ファイル名:行番号] @レビュアー名: コメント本文` の形式に整形して読み込む。
 
 ---
 
