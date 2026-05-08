@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: e89993889fa53df380d51093ba237348791fad1e
+    github-tree-sha: ed531efd891f518b31bcaf6e95b3ca1e2c08bfb5
 name: review-loop
 ---
 # review-loop
@@ -129,7 +129,7 @@ fi
 - **コードへの修正・Edit・commit・push は一切行わない**
 - Phase 3 はスキップし、代わりに **Phase 3b** でインラインコメントとして投稿する
 - 各指摘を該当ファイルの該当行に紐づけてGitHub Reviewとして1件で投稿する
-- ループは「修正なし → 指摘が減らないため1回で終了」となる
+- **深掘りループを最大3回実行する**: 各イテレーションで前回の指摘を踏まえた深掘りレビューを行い、新たな指摘が出なくなったら終了する
 
 ---
 
@@ -166,6 +166,7 @@ fi
 - 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
 - **PR ありモードのみ**: `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
 - **PR なしモード**: `INLINE_COMMENTS_JSON:` ブロックの出力は不要
+- **深掘りモード（IS_OWN_PR=false かつ N >= 2）**: 前回イテレーションの指摘 `{PREV_FINDINGS}` を踏まえた上で、前回見落とした観点・深掘りが必要な点を重点的に確認すること。前回と同じ指摘は出力不要。新たな指摘のみを出力し、新規指摘が0件の場合は `FINDINGS: 0C 0W 0I` と返す
 
 **`INLINE_COMMENTS_JSON:` ブロックのフォーマット**（PR ありモードのみ）:
 
@@ -413,6 +414,9 @@ Total Info:     Z件（修正対象外）
 | 条件 | アクション |
 |------|-----------|
 | Critical=0 AND Warning=0 | ✅ **完了** → Phase 4 |
+| IS_OWN_PR=false かつ 新規指摘なし（前回と同じ / 0件） | ⚠️ **収束** → Phase 4（コード修正できないため終了） |
+| IS_OWN_PR=false かつ iteration >= 3 | 🔚 **深掘りループ上限** → Phase 4 |
+| IS_OWN_PR=false かつ 新規指摘あり | 🔄 **Phase 3b へ（コメント投稿→再ループ）** |
 | 前回と全く同じ指摘（収束） | ⚠️ **手動対応が必要** → Phase 4 |
 | iteration >= 5 AND Critical/Warning > 0 | 🙋 **ユーザーに継続するか尋ねる** |
 | それ以外 | 🔄 **Phase 3 へ（修正して再ループ）** |
@@ -612,10 +616,18 @@ gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなか
 "
 ```
 
-### 3b-5. Phase 4へ
+### 3b-5. 深掘りループ継続判定
 
-他人のPRはコードを修正できないため、Phase 3b 完了後は **1回でPhase 4へ進む**。
-（コードが変わらない → 再レビューしても同じ指摘が出る → ループしても無意味）
+他人のPRはコードを修正できないが、**指摘の深掘り**のためにループを継続する（最大3回）。
+
+終了条件（いずれかを満たしたら Phase 4へ）：
+- 新たな指摘が0件だった（前回と同じ / 新規なし）
+- iteration >= 3（深掘りループ上限に達した）
+
+継続条件：
+- 新規の Critical / Warning が発見された → Iteration N+1 へ（Phase 1の深掘りモードで再実行）
+
+**継続時の処理**: `PREV_FINDINGS` に今回の指摘サマリーをセットし、次イテレーションの各エージェントへ渡す。次イテレーションでは「前回の指摘を前提として、見落とした観点・深掘りが必要な点を探す」深掘りモードで実行する。
 
 ---
 
