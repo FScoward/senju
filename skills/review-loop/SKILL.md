@@ -1,11 +1,11 @@
 ---
-description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。6観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性）を並列レビューし、修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
+description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。7観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性・パフォーマンス）を並列レビューし、テスト不足が検出された場合はmihariスキルを自動呼び出しして深掘り補完する。修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
 license: MIT
 metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: ed531efd891f518b31bcaf6e95b3ca1e2c08bfb5
+    github-tree-sha: 7bae872d842729eed933f4504401210400c10012
 name: review-loop
 ---
 # review-loop
@@ -23,7 +23,7 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
 ```
 [Iteration N]
   │
-  ├─ 6観点を並列レビュー（run_in_background: true × 6）
+  ├─ 7観点を並列レビュー（run_in_background: true × 7）
   │
   ├─ 全指摘を統合・集計
   │    Critical: X件 / Warning: Y件 / Info: Z件
@@ -102,10 +102,11 @@ fi
 | silent-failure | **haiku** | haiku | haiku |
 | requirements | **sonnet** | sonnet | sonnet |
 | test-adequacy | **sonnet** | sonnet | sonnet |
+| performance | **sonnet** | sonnet | sonnet |
 
 - `silent-failure` は常にhaiku（パターン検出が主体で判断不要）
 - `coding-rules` はIteration 1 かつ diff が大きい場合のみsonnet（初回網羅後は差分確認のみ）
-- `architecture / security / requirements / test-adequacy` は常にsonnet（意味理解・判断が必要）
+- `architecture / security / requirements / test-adequacy / performance` は常にsonnet（意味理解・判断が必要）
 
 ### 自分のPRかどうかの判定（修正可否の決定）
 
@@ -151,9 +152,9 @@ fi
 
 ---
 
-## Phase 1（各イテレーション）: 6観点並列レビュー
+## Phase 1（各イテレーション）: 7観点並列レビュー
 
-**1メッセージで6つのAgentを同時起動**（`run_in_background: true`）。
+**1メッセージで7つのAgentを同時起動**（`run_in_background: true`）。
 
 各レビュアーへの共通追加指示:
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
@@ -397,11 +398,90 @@ Agent(
 )
 ```
 
+### 7. performance レビュアー
+
+**モデル選択**: 常に `model: "sonnet"`（N+1・バッチ最適化・キャッシュ判断は意味理解が必要）
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  run_in_background: true,
+  description: "パフォーマンスレビュー（iteration {N}）",
+  prompt: """
+  あなたはパフォーマンスの専門レビュアーです。
+
+  変更差分をパフォーマンス観点でレビューしてください。
+
+  手順:
+  1. `{DIFF_CMD}` で差分を取得
+  2. 変更ファイルを読み取り、以下の観点でレビュー
+
+  チェック観点:
+  - N+1クエリ問題（ループ内でのDB/APIクエリ）
+  - 不要なデータロード（SELECT *・過剰なJOIN・必要以上のレコード取得）
+  - バッチ処理できる箇所の逐次処理（IN句・bulkInsert未使用）
+  - キャッシュの未活用（同一クエリの繰り返し実行）
+  - ループ内での重い計算・正規表現コンパイル
+  - 不要なオブジェクト生成・コピー（大量のリスト変換）
+  - 非同期処理の直列実行（並列化可能なawaitの逐次呼び出し）
+  - ページネーションなしの全件取得
+  - インデックス未使用になりえるクエリパターン（関数適用・暗黙型変換）
+  - メモリリーク（イベントリスナー・コネクション・ストリームの未解放）
+
+  出力形式:
+  - [重大度] ファイル名:行番号 - 問題の説明
+  - Before/After コード例（改善後の実装を必ず示す）
+
+  最終行: FINDINGS: {critical}C {warning}W {info}I
+  """
+)
+```
+
+---
+
+## Phase 1.5（条件付き）: mihari によるテスト充足性深掘り
+
+> **実行条件（全て満たす場合のみ）**:
+> 1. `test-adequacy` レビュアーの結果が **Critical ≥ 1 OR Warning ≥ 2**
+> 2. `IS_OWN_PR=true`（テスト追加ができる自分のコード）
+> 3. 差分にテストファイルが含まれる（`git diff` に `*Test.kt` / `*.test.ts` 等が存在する）
+>
+> 上記いずれかを満たさない場合は **このPhaseをスキップ** してPhase 2へ進む。
+
+### 呼び出し
+
+```
+Skill("mihari") を呼び出す（内部ループスキル）
+
+渡す情報:
+  target:
+    ac_source:            {PR_BODY}  # PRのAC本文 or sprint-contract.md
+    test_code_paths:      差分内の *Test.kt / *.test.ts / *.test.tsx のパスリスト
+    implementation_paths: 差分内の非テストファイルのパスリスト
+    scope_description:    "review-loop iter{N} — test-adequacyで {X}Critical {Y}Warning を検出"
+  config:
+    max_iterations:           3          # review-loop内呼び出しなので短めに
+    log_path:                 scratch.md
+    allow_warning_with_dr:    true
+    run_tests_on_each_iteration: true
+```
+
+### mihari 結果の扱い
+
+| mihari 返却 | review-loop の扱い |
+|---|---|
+| `PASS` | test-adequacy の指摘をクリア扱いにしてPhase 2へ |
+| `FAIL` | mihari の残存指摘を test-adequacy 分に合算してPhase 2へ |
+| `ESCALATE` | mihari の結果をそのまま手動対応リストに追加してPhase 2へ |
+
+mihari が追加したテストは commit 対象に含める（Phase 3 の `git add -A` で自動的に含まれる）。
+
 ---
 
 ## Phase 2: 結果集計・ループ判定
 
-6エージェント完了後、各出力末尾の `FINDINGS: XC YW ZI` 行をパースして集計する。
+7エージェント完了後（mihari 呼び出し時はその結果も反映）、各出力末尾の `FINDINGS: XC YW ZI` 行をパースして集計する。
 
 ```
 Total Critical: X件
@@ -474,7 +554,7 @@ COMMENTS_JSON='[コメントの配列]'
 gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
   --method POST \
   --field commit_id="{COMMIT_ID}" \
-  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Info |\n|---|---|---|---|\n| コーディング規約 | X | Y | Z |\n| アーキテクチャ | X | Y | Z |\n| セキュリティ | X | Y | Z |\n| サイレント障害 | X | Y | Z |\n| 要件充足度 | X | Y | Z |\n| テスト妥当性 | X | Y | Z |\n\n**合計: {total_critical}C / {total_warning}W**" \
+  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Info |\n|---|---|---|---|\n| コーディング規約 | X | Y | Z |\n| アーキテクチャ | X | Y | Z |\n| セキュリティ | X | Y | Z |\n| サイレント障害 | X | Y | Z |\n| 要件充足度 | X | Y | Z |\n| テスト妥当性 | X | Y | Z |\n| パフォーマンス | X | Y | Z |\n\n**合計: {total_critical}C / {total_warning}W**" \
   --field event="COMMENT" \
   --field "comments={COMMENTS_JSON}"
 ```
@@ -644,6 +724,17 @@ gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなか
 | #2   |        1 |       2 |    1 |        3 | https://github.com/…/pull/N#pullrequestreview-yyy |
 | #3   |        0 |       0 |    1 |        — | —                                                  |
 
+観点別サマリー（最終イテレーション）:
+| 観点 | Critical | Warning | Info |
+|---|---|---|---|
+| コーディング規約 | 0 | 0 | 0 |
+| アーキテクチャ | 0 | 0 | 0 |
+| セキュリティ | 0 | 0 | 0 |
+| サイレント障害 | 0 | 0 | 0 |
+| 要件充足度 | 0 | 0 | 0 |
+| テスト妥当性 | 0 | 0 | 0 |
+| パフォーマンス | 0 | 0 | 0 |
+
 総修正: 11件 / 3イテレーション
 PRはレビュー観点でクリーンな状態です。
 各イテレーションのインラインコメントはPR上で確認できます。
@@ -659,6 +750,17 @@ PRはレビュー観点でクリーンな状態です。
 | #1   |        3 |       5 |    2 |        8 | abc1234 |
 | #2   |        1 |       2 |    1 |        3 | def5678 |
 | #3   |        0 |       0 |    1 |        — | —       |
+
+観点別サマリー（最終イテレーション）:
+| 観点 | Critical | Warning | Info |
+|---|---|---|---|
+| コーディング規約 | 0 | 0 | 0 |
+| アーキテクチャ | 0 | 0 | 0 |
+| セキュリティ | 0 | 0 | 0 |
+| サイレント障害 | 0 | 0 | 0 |
+| 要件充足度 | 0 | 0 | 0 |
+| テスト妥当性 | 0 | 0 | 0 |
+| パフォーマンス | 0 | 0 | 0 |
 
 総修正: 11件 / 3イテレーション
 コードはレビュー観点でクリーンな状態です。
