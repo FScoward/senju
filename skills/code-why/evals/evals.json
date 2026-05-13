@@ -1,0 +1,65 @@
+{
+  "skill_name": "code-why",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Kotlinで、オブジェクトのリストから特定のキー（例: userId）で重複除去する関数を実装してほしい。data classは `data class User(val userId: String, val name: String, val score: Int)` で、同じuserIdが複数あったら最初に出てきたものを残す方針で。",
+      "expected_output": "重複除去関数の実装と、なぜそのデータ構造（LinkedHashMapなど）を選んだか、O(n)で済む理由、他の選択肢（distinctBy、groupByなど）を退けた理由がWHYレベルで説明される",
+      "files": [],
+      "assertions": [
+        {
+          "id": "dedup-why-not-what",
+          "text": "説明が「何をするか（WHAT）」だけでなく「なぜそう書いたか（WHY）」に踏み込んでいる（データ構造選択の根拠、計算量の比較など）"
+        },
+        {
+          "id": "dedup-alternatives-mentioned",
+          "text": "distinctBy や groupBy など代替の実装アプローチへの言及があり、なぜ採用しなかったかが述べられている"
+        },
+        {
+          "id": "dedup-no-inline-comments",
+          "text": "コードブロック内に説明コメント（// や /* */）が含まれていない。説明はコード外の会話テキストとして書かれている"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "TypeScriptで、外部APIを呼ぶ fetch ラッパーを実装したい。要件: 失敗したら最大3回リトライ、リトライ間隔は指数バックオフ（1秒→2秒→4秒）、ネットワークエラーはリトライするが4xxはリトライしない。シグネチャは `async function fetchWithRetry<T>(url: string, options?: RequestInit): Promise<T>` で。",
+      "expected_output": "実装と共に、なぜ指数バックオフか（固定間隔との違い）、なぜ4xxをリトライしないか（クライアントエラーはリトライしても無意味）、なぜ最大3回か（トレードオフ）、ジッター不採用の判断根拠などがWHYレベルで説明される",
+      "files": [],
+      "assertions": [
+        {
+          "id": "retry-exponential-why",
+          "text": "指数バックオフを選んだ理由（固定間隔より優れる点、サーバー負荷の分散など）がWHYレベルで説明されている"
+        },
+        {
+          "id": "retry-4xx-why",
+          "text": "4xxエラーをリトライしない理由（クライアント側の問題はリトライしても解決しないなど）が説明されている"
+        },
+        {
+          "id": "retry-no-inline-comments",
+          "text": "コードブロック内に説明コメントが含まれていない。説明はコード外の会話テキストとして書かれている"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "このファイルの `getUserAccount` という関数名を `fetchUserAccount` に変えてほしい。\n\n```typescript\nasync function getUserAccount(userId: string): Promise<Account> {\n  const response = await api.get(`/accounts/${userId}`);\n  return response.data;\n}\n```",
+      "expected_output": "trivialな変更なので、フルの方針宣言・代替案・鍵となる判断のフルセットは出ない。「rename なので説明省略」程度の簡潔な宣言のみで、コードを返す。過剰な ceremony が出ないことを確認する",
+      "files": [],
+      "assertions": [
+        {
+          "id": "rename-no-ceremony",
+          "text": "「方針宣言」「代替案の比較」「鍵となる判断の一覧」などのフルセット ceremony が出ていない。trivial な変更として簡潔に処理されている"
+        },
+        {
+          "id": "rename-concise",
+          "text": "レスポンスが簡潔（おおむね300文字以内、または短い一言＋コードブロック程度）で、過度な説明がない"
+        },
+        {
+          "id": "rename-correct",
+          "text": "関数名が getUserAccount から fetchUserAccount に正しく変更されたコードが返っている"
+        }
+      ]
+    }
+  ]
+}
