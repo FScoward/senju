@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 7bae872d842729eed933f4504401210400c10012
+    github-tree-sha: 758244a5a31fa474a85e246a31f62ade572c91b4
 name: review-loop
 ---
 # review-loop
@@ -160,14 +160,27 @@ fi
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
   - PR ありモード: `gh pr diff {PR_NUMBER}`
   - PR なしモード: `git diff {BASE}...HEAD`
+- ただし重大リスクは diff 内だけで判断しない。変更された型・DB列・enum・API DTO・フォーム値・raw SQL は `rg` で参照元を追い、差分外の seed / fixture / setup script / caller / mapper への波及も確認すること
+- diff外で見つけた Critical / Warning 相当の問題は、diff内の起点行に紐づけるか、紐づけできない場合は fallback finding として出力すること
 - 指摘は `ファイル名:行番号` 形式で具体的に
 - **行番号はdiff内の追加行（`+` で始まる行）に存在する行を優先して特定すること**（PR ありモード: インラインコメント投稿に使用）
 - 重大度を **Critical / Warning / Info** で分類
+- 重大度基準:
+  - **Critical**: 本番データ破壊、権限/テナント漏れ、確実な migration 失敗、データ消失
+  - **Warning**: 環境依存の migration 失敗、API不整合、schema変更の波及漏れ、fixture/seed破壊、仕様上危険な default
+  - **Info**: JSDoc、軽微な命名、軽微な a11y、保守性のみの改善
+- Critical / Warning がある場合、Info/Nit は最大3件までに抑え、投稿ノイズより重大指摘の精度を優先すること
+- 変更種別ごとの必須クロスチェック:
+  - DB migration: backfill / precondition、seed、fixture、setup script、raw SQL INSERT
+  - enum / value object 追加: 全 mapping、default値、未知値処理、frontend 定数同期
+  - API request / response 変更: 既存 field との整合性、client payload、validation
+  - UI form 変更: default値が仕様を歪めないか、submit payload、component test
+  - destructive script 追加: 実行時ガード、対象環境制限、誤実行時の被害範囲
 - 修正案は Before/After のコード例を含める
 - 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
 - **PR ありモードのみ**: `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
 - **PR なしモード**: `INLINE_COMMENTS_JSON:` ブロックの出力は不要
-- **深掘りモード（IS_OWN_PR=false かつ N >= 2）**: 前回イテレーションの指摘 `{PREV_FINDINGS}` を踏まえた上で、前回見落とした観点・深掘りが必要な点を重点的に確認すること。前回と同じ指摘は出力不要。新たな指摘のみを出力し、新規指摘が0件の場合は `FINDINGS: 0C 0W 0I` と返す
+- **深掘りモード（IS_OWN_PR=false かつ N >= 2）**: 前回イテレーションの指摘 `{PREV_FINDINGS}` を踏まえた上で、前回見落とした観点・深掘りが必要な点を重点的に確認すること。前回と同じ指摘は出力不要。特に前回の指摘カテゴリ（migration / API / enum / UI / destructive script 等）から波及する関連箇所を追加探索し、新たな指摘のみを出力する。新規指摘が0件の場合は `FINDINGS: 0C 0W 0I` と返す
 
 **`INLINE_COMMENTS_JSON:` ブロックのフォーマット**（PR ありモードのみ）:
 
