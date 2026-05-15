@@ -620,6 +620,62 @@ max_iterations超過時はエスカレーション:
 - ビルド・lint・typecheck・テスト全てPASS
 - Critical指摘が0件
 - sprint-contract.mdの全基準が✅（生成した場合のみ）
+- **`.claude/tmp/qg-result.md` を生成済み**（フォーマットは下記、T5 の物理ゲートで参照される）
+
+### QG マニフェスト（`.claude/tmp/qg-result.md`）— 必須
+
+> **QG サブエージェントの出口で必ず書き出す。** Stage ごとの実行証跡をマシン可読形式で残す。
+> `hooks/qg-required/` フックはこのファイルを根拠に `git push` を許可/拒否する。
+
+#### 必須要件
+
+- worktree ルートの `.claude/tmp/qg-result.md` に保存する
+- `## Final: PASS` の行を含める（FAIL や WIP では push がブロックされる）
+- **`mihari` の PASS 行**（QG-3 Stage 1 を確かに実行した証拠）
+- **`review-loop` の PASS 行**（QG-3 Stage 2 を確かに実行した証拠）
+
+メインセッションが `./gradlew build` を Bash で走らせて「PASS」と宣言するだけでは要件を満たさない。
+**スキル呼び出しを実行し、そのログを行として記録する**こと。
+
+#### フォーマット
+
+```markdown
+# QG Result: {チケットID}
+
+- **Date**: {ISO 8601 タイムスタンプ}
+- **Branch**: feature/{チケットID}
+- **Base**: {検出した base ブランチ（例: origin/main, feature/parent-ticket）}
+
+## Stages
+
+| Stage | Status | Evidence |
+|-------|--------|----------|
+| QG-1 build/lint/test | PASS | `./gradlew build` exit 0、`npm run test` 全 PASS |
+| QG-2 simplify | PASS | `Skill(simplify)` no further changes（または修正 N 件適用済み） |
+| QG-3 Stage 1 mihari | PASS | Round {N}, Critical=0, Warning=0（または DR 記録済み） |
+| QG-3 Stage 2 review-loop | PASS | Iterations {N}, Critical=0, Warning=0 |
+| QG-4 advisor | PASS or SKIPPED (Tier 1) | {根拠} |
+
+## Self-Verification
+
+- Verification Before Completion 鉄則を実行した: ✅
+- 各 Stage の出力 / exit code を実際に確認した: ✅
+- 推測ベースの DR で Warning を許容していない: ✅（または DR-{ID} を参照）
+
+## Final: PASS
+```
+
+#### FAIL / WIP 時の扱い
+
+- QG-4 で max_iterations 到達 → `## Final: FAIL` を書き出してエスカレーション
+- 途中で中断 → `## Final: WIP` を書き、再開時に再評価
+- フックは `Final: PASS` 以外で push をブロックする
+
+#### スキル呼び出しを「呼んだことにする」のは禁止
+
+`mihari` / `review-loop` の PASS 行は**実際にスキルを起動した結果**を書く。
+スキルを呼ばずに「手動で同等のことを確認した」と書くのはアンチパターン。
+スキル呼び出しを省略した場合は `qg-result.md` に書いてはならず、結果として push がブロックされる。
 
 ### QGからメインへの返却フォーマット
 

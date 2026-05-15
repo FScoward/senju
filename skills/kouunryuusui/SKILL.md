@@ -90,6 +90,19 @@ kouunryuusui
 > 「PR作りますか？」「次のステップに進みますか？」と聞いてはならない。
 > T3 → QG → T5 は一気通貫で実行する。停止点はT5のPush確認のみ。
 
+> **⚠️ 絶対ルール: QG マニフェスト（`qg-result.md`）の生成は必須**
+>
+> QG（品質ゲート）が完了したら、worktree ルートの **`.claude/tmp/qg-result.md`** に
+> 各 Stage の実行結果と PASS 判定を必ず書き出すこと。これは T5（Push）の物理ゲートでもある。
+>
+> - `mihari` と `review-loop` の PASS 記録が**両方**そろっていなければ T5 に進んではならない。
+> - `qg-required` フック（`hooks/qg-required/`）が導入されている環境では、
+>   `qg-result.md` が無い・不完全な場合 `git push` がブロックされる。
+> - メインセッションが Bash で `./gradlew build` を走らせて「PASS」と宣言するだけでは不十分。
+>   **スキル呼び出し（`Skill(simplify)` / `mihari` / `review-loop`）の実行ログを伴う必要がある。**
+>
+> フォーマットと詳細は `references/lower-flow.md` の「QG完了シグナル」を参照。
+
 ## 核心原則
 
 > **品質を最優先にせよ。時間をかけてでも正しく作れ。迷ったらDecision Recordを書いて進め。**
