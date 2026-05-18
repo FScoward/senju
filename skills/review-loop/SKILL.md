@@ -23,21 +23,27 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
 ```
 [Iteration N]
   │
+  ├─ Phase 2: External Signals Gate（PRありモードのみ）
+  │    既存review thread / failed CI / PR metadataを取得し、MUST_RECHECK_TOPICSを作る
+  │
+  ├─ Phase 3: Database Migration Gate（migration差分がある場合のみ）
+  │    Flyway version / timestamp / index / lock / scopeをdeterministicに確認する
+  │
   ├─ 7観点を並列レビュー（run_in_background: true × 7）
   │
   ├─ 全指摘を統合・集計
-  │    Critical: X件 / Warning: Y件 / Info: Z件
+  │    Critical: X件 / Warning: Y件 / Minor: Z件 / Info: W件
   │
   ├─ X == 0 AND Y == 0？
-  │    YES → ✅ 完了（Phase 4へ）
+  │    YES → high confidence Minorの扱いを確定 → ✅ 完了（Phase 10へ）
   │
   ├─ N >= 5 AND 残指摘あり？
   │    YES → 🙋 ユーザーに「続けますか？」と確認
   │            A: はい  → max_iterations += 5、Iteration N+1 へ
-  │            B: いいえ → ⚠️ 残指摘サマリー（Phase 4へ）
+  │            B: いいえ → ⚠️ 残指摘サマリー（Phase 10へ）
   │
   ├─ 同じ指摘が収束（自動修正不可）？
-  │    YES → ⚠️ 手動対応サマリー（Phase 4へ）
+  │    YES → ⚠️ 手動対応サマリー（Phase 10へ）
   │
   └─ それ以外 → 修正を適用 → commit（PR ありの場合のみ push）→ Iteration N+1
 ```
@@ -48,7 +54,7 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
 
 ---
 
-## Phase 0: 初期化
+## Phase 1: 初期化
 
 ### モード判定（最初に実行）
 
@@ -128,7 +134,7 @@ fi
 **`IS_OWN_PR=false` の場合（他人のPR）**:
 - レビューは全て実行する（指摘内容を報告する）
 - **コードへの修正・Edit・commit・push は一切行わない**
-- Phase 3 はスキップし、代わりに **Phase 3b** でインラインコメントとして投稿する
+- Phase 8 はスキップし、代わりに **Phase 9** でインラインコメントとして投稿する
 - 各指摘を該当ファイルの該当行に紐づけてGitHub Reviewとして1件で投稿する
 - **深掘りループを最大3回実行する**: 各イテレーションで前回の指摘を踏まえた深掘りレビューを行い、新たな指摘が出なくなったら終了する
 
@@ -143,6 +149,9 @@ fi
   "diff_cmd": "gh pr diff 123",
   "ticket_id": "",
   "is_own_pr": true,
+  "must_recheck_topics": [],
+  "external_signals": {},
+  "migration_gate": {},
   "max_iterations": 5,
   "current_iteration": 0,
   "iterations": [],
@@ -152,7 +161,178 @@ fi
 
 ---
 
-## Phase 1（各イテレーション）: 7観点並列レビュー
+## Phase 2: External Signals Gate（PRありモードのみ）
+
+> **⛔ `HAS_PR=false`（PRなしモード）の場合はこのPhaseをスキップ。**
+
+AIレビューを始める前に、GitHub上の既存シグナルを必ず取得し、以降のレビュアーへ渡す `MUST_RECHECK_TOPICS` を作る。
+failed check や既存 review thread は「参考情報」ではなく、review-loop の入力として扱う。
+
+### 2-1. PR metadata / CI / review signals の取得
+
+```bash
+gh pr view {PR_NUMBER} --json statusCheckRollup,latestReviews,files,commits,body
+```
+
+GraphQL で review threads を取得する:
+
+```bash
+OWNER=$(gh repo view --json owner -q '.owner.login')
+REPO=$(gh repo view --json name -q '.name')
+
+gh api graphql -f owner="$OWNER" -f repo="$REPO" -F number="{PR_NUMBER}" -f query='
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 20) {
+            nodes {
+              path
+              line
+              body
+              author { login }
+              createdAt
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+```
+
+### 2-2. failed check の root cause を先に確定
+
+`statusCheckRollup` に failed / error / cancelled check がある場合は、通常レビューより先に以下を要約する:
+
+- failing job / failing Gradle task / failing step
+- root error（最初の meaningful な exception / assertion / linter message）
+- 既知 reviewer 指摘との対応関係
+- review-loopで必ず再確認するカテゴリ
+
+特に以下は deterministic gate として扱い、見つかった時点で `MUST_RECHECK_TOPICS` に入れる:
+
+- Migration Version Check
+- Backend PR Check
+- ktlint / formatter
+- unit / integration / migration test failure
+
+failed Migration Version Check は **Critical** として扱う。CI failure の原因が未確定のまま Phase 4 へ進まない。
+
+### 2-3. review threads から MUST_RECHECK_TOPICS を作る
+
+既存 review thread をカテゴリ化し、重複投稿ではなく横展開レビューの起点にする:
+
+- migration version / timestamp / ordering
+- index naming / index operation risk / query shape
+- enum / constant / partial index predicate
+- scope creep / unrelated files
+- tenant isolation / authorization
+- tests / fixtures / seed / setup script
+
+`MUST_RECHECK_TOPICS` の各項目は、少なくとも以下を持つ:
+
+```json
+{
+  "source": "failed-check|review-thread|latest-review|pr-body",
+  "severity_hint": "Critical|Warning|Minor|Info",
+  "category": "migration-version",
+  "summary": "Migration Version Check failed because V202605... already exists on main",
+  "paths": ["backend/src/main/resources/db/migration/V202605...__example.sql"],
+  "required_followups": [
+    "同一Flyway versionがmainに存在しないか",
+    "main最新migrationより新しいtimestampか",
+    "CI gateで同じ失敗が解消されたか"
+  ]
+}
+```
+
+### 2-4. 出力フォーマット
+
+```
+EXTERNAL_SIGNALS_FINDINGS:
+- [Critical] Migration Version Check - failed check の root cause が Flyway version collision の可能性を示している
+- [Warning] review-thread:backend/src/main/resources/db/migration/V202605...__foo.sql:12 - index operation risk の既存指摘あり
+EXTERNAL_SIGNALS_FINDINGS_END
+
+MUST_RECHECK_TOPICS:
+- category: migration-version
+  summary: failed Migration Version Check のroot cause、同一version、timestamp最新性、migration orderingを確認する
+- category: scope-creep
+  summary: PR body / ticket ID / changed filesを照合し、別チケット変更が混入していないか確認する
+MUST_RECHECK_TOPICS_END
+
+FINDINGS: {critical}C {warning}W {minor}M {info}I
+```
+
+---
+
+## Phase 3: Database Migration Gate（migration差分がある場合のみ）
+
+> **実行条件**: `git diff --name-status origin/main...HEAD` または PR files に `backend/src/main/resources/db/migration/*.sql` が含まれる場合のみ実行する。
+
+このPhaseは通常 reviewer とは別に必ず実行する。結果は `MIGRATION_GATE_FINDINGS` として Phase 6 の集計対象に含め、同時に `MUST_RECHECK_TOPICS` へ追加して Phase 4 の全レビュアーへ渡す。
+
+### 3-1. 必須コマンド
+
+```bash
+git fetch origin main
+git diff --name-status origin/main...HEAD
+git diff origin/main...HEAD -- backend/src/main/resources/db/migration
+ls backend/src/main/resources/db/migration | sort | tail -30
+rg -n "V[0-9]+\\.[0-9]+__" backend/src/main/resources/db/migration
+```
+
+`docs/coding-rules/database.md` が存在する場合は、migration / index 規約の真実ソースとして必ず読む。
+
+### 3-2. 必須確認
+
+- 新規 migration の version が main 最新より新しいか
+- 同一 Flyway version が main に存在しないか
+- migration filename と PR マージ時点の timestamp が妥当か
+- index 名が `docs/coding-rules/database.md` の規約に合うか
+- `CREATE INDEX` の lock 影響と `CONCURRENTLY` 要否が説明・判断されているか
+- partial index の predicate が Kotlin enum / query constant / CHECK 制約と二重管理になっていないか
+- 対象 query の `WHERE` / `ORDER BY` / `LIMIT` と index column order が整合するか
+- `tenant_id` を含める / 含めない判断が query shape と一致しているか
+- migration-only PR に scope 外の Kotlin / frontend / docs 変更が混入していないか
+
+### 3-3. 重大度基準
+
+| 条件 | 重大度 |
+|---|---|
+| 同一 Flyway version collision | Critical |
+| failed Migration Version Check | Critical |
+| main 最新 migration より古い timestamp | Critical または Major相当（review-loop上は Critical / Warning のどちらかに正規化） |
+| index naming 規約違反 | Warning以上 |
+| `CREATE INDEX` の lock 影響説明なし | Warning |
+| partial index の enum 文字列ハードコード | Warning以上 |
+| query shape と index column order の不整合 | Warning以上 |
+| migration-only PR の scope 外変更混入 | Warning または Minor（ユーザーが scope を厳密に求める文脈では Warning） |
+
+### 3-4. 出力フォーマット
+
+```
+MIGRATION_GATE_FINDINGS:
+- [Critical] backend/src/main/resources/db/migration/V202605...__foo.sql:1 - 同一Flyway versionがorigin/mainに存在する
+- [Warning] backend/src/main/resources/db/migration/V202605...__foo.sql:12 - CREATE INDEXのlock影響とCONCURRENTLY要否が説明されていない
+MIGRATION_GATE_FINDINGS_END
+
+MUST_RECHECK_TOPICS_APPEND:
+- category: migration-version
+  summary: Flyway collision / timestamp / ordering / CI gateを横断確認する
+- category: partial-index-predicate
+  summary: Kotlin enum / query constant / CHECK制約 / 将来enum追加時の性能退行を横断確認する
+MUST_RECHECK_TOPICS_APPEND_END
+
+FINDINGS: {critical}C {warning}W {minor}M {info}I
+```
+
+---
+
+## Phase 4（各イテレーション）: 7観点並列レビュー
 
 **1メッセージで7つのAgentを同時起動**（`run_in_background: true`）。
 
@@ -160,27 +340,33 @@ fi
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
   - PR ありモード: `gh pr diff {PR_NUMBER}`
   - PR なしモード: `git diff {BASE}...HEAD`
+- Phase 2 / 3 で作った `{MUST_RECHECK_TOPICS}` を必ず再確認すること
+  - 既存 review thread と同じ指摘を重複投稿するだけで終わらず、同カテゴリの横展開を確認すること
+  - 例: Flyway collision が出たら、timestamp 最新性、同一 version、migration ordering、CI gate を横断確認する
+  - 例: partial index predicate が出たら、Kotlin enum、query constant、CHECK制約、将来enum追加時の性能退行を横断確認する
+  - failed check がある場合、その root cause が修正済みか、または今回の差分で未解決のままかを明示すること
 - ただし重大リスクは diff 内だけで判断しない。変更された型・DB列・enum・API DTO・フォーム値・raw SQL は `rg` で参照元を追い、差分外の seed / fixture / setup script / caller / mapper への波及も確認すること
 - diff外で見つけた Critical / Warning 相当の問題は、diff内の起点行に紐づけるか、紐づけできない場合は fallback finding として出力すること
 - 指摘は `ファイル名:行番号` 形式で具体的に
 - **行番号はdiff内の追加行（`+` で始まる行）に存在する行を優先して特定すること**（PR ありモード: インラインコメント投稿に使用）
-- 重大度を **Critical / Warning / Info** で分類
+- 重大度を **Critical / Warning / Minor / Info** で分類
 - 重大度基準:
   - **Critical**: 本番データ破壊、権限/テナント漏れ、確実な migration 失敗、データ消失
   - **Warning**: 環境依存の migration 失敗、API不整合、schema変更の波及漏れ、fixture/seed破壊、仕様上危険な default
-  - **Info**: JSDoc、軽微な命名、軽微な a11y、保守性のみの改善
-- Critical / Warning がある場合、Info/Nit は最大3件までに抑え、投稿ノイズより重大指摘の精度を優先すること
+  - **Minor**: 直ちに壊れないが high confidence で直す / 判断を残す価値がある保守性・運用リスク・scope creep・テスト説明不足
+  - **Info**: JSDoc、軽微な命名、軽微な a11y、参考情報のみ
+- Critical / Warning がある場合、Minor / Info / Nit は最大3件までに抑え、投稿ノイズより重大指摘の精度を優先すること
 - 変更種別ごとの必須クロスチェック:
-  - DB migration: backfill / precondition、seed、fixture、setup script、raw SQL INSERT
+  - DB migration: backfill / precondition、seed、fixture、setup script、raw SQL INSERT、Flyway version、timestamp、index naming、lock影響、partial index predicate、query shape
   - enum / value object 追加: 全 mapping、default値、未知値処理、frontend 定数同期
   - API request / response 変更: 既存 field との整合性、client payload、validation
   - UI form 変更: default値が仕様を歪めないか、submit payload、component test
   - destructive script 追加: 実行時ガード、対象環境制限、誤実行時の被害範囲
 - 修正案は Before/After のコード例を含める
-- 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {info}I` の形式で集計を記載
+- 出力の**最終行**に必ず `FINDINGS: {critical}C {warning}W {minor}M {info}I` の形式で集計を記載
 - **PR ありモードのみ**: `FINDINGS:` 行の**直前**に `INLINE_COMMENTS_JSON:` ブロックを出力すること（後述フォーマット参照）
 - **PR なしモード**: `INLINE_COMMENTS_JSON:` ブロックの出力は不要
-- **深掘りモード（IS_OWN_PR=false かつ N >= 2）**: 前回イテレーションの指摘 `{PREV_FINDINGS}` を踏まえた上で、前回見落とした観点・深掘りが必要な点を重点的に確認すること。前回と同じ指摘は出力不要。特に前回の指摘カテゴリ（migration / API / enum / UI / destructive script 等）から波及する関連箇所を追加探索し、新たな指摘のみを出力する。新規指摘が0件の場合は `FINDINGS: 0C 0W 0I` と返す
+- **深掘りモード（IS_OWN_PR=false かつ N >= 2）**: 前回イテレーションの指摘 `{PREV_FINDINGS}` を踏まえた上で、前回見落とした観点・深掘りが必要な点を重点的に確認すること。前回と同じ指摘は出力不要。特に前回の指摘カテゴリ（migration / API / enum / UI / destructive script 等）から波及する関連箇所を追加探索し、新たな指摘のみを出力する。新規指摘が0件の場合は `FINDINGS: 0C 0W 0M 0I` と返す
 
 **`INLINE_COMMENTS_JSON:` ブロックのフォーマット**（PR ありモードのみ）:
 
@@ -199,8 +385,9 @@ INLINE_COMMENTS_JSON_END
 
 - `path`: 差分内のファイルパス（リポジトリルートからの相対パス）
 - `line`: 差分の右辺（変更後）の行番号。削除のみの場合は `side: "LEFT"`
-- `body`: GitHub Markdown 形式。先頭に `**[Critical]**` / `**[Warning]**` / `**[Info]**` を付ける
-- **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 2.5 でフィルタリングに使用）
+- `body`: GitHub Markdown 形式。先頭に `**[Critical]**` / `**[Warning]**` / `**[Minor]**` / `**[Info]**` を付ける
+- **Minor は `body` 末尾に `<!-- minor-only -->` を付加する**（Phase 7 でフィルタリングに使用）
+- **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 7 でフィルタリングに使用）
 - 指摘がない場合は空配列 `[]` を出力する
 
 ### 1. coding-rules レビュアー
@@ -235,7 +422,7 @@ Agent(
   - [重大度] ファイル名:行番号 - 問題の説明
   - Before/After コード例
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -266,7 +453,7 @@ Agent(
   - インターフェース設計（疎結合・高凝集）
   - 副作用の局所化
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -298,7 +485,7 @@ Agent(
   - データ露出（ログへの機密情報出力）
   - マルチテナント環境ではテナント分離（tenantIdフィルタ漏れ）
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -331,7 +518,7 @@ Agent(
   - switch/when 文の網羅漏れ
   - 非同期処理のエラー無視
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -350,7 +537,7 @@ Agent(
   あなたは要件充足度を検証する専門レビュアーです。
 
   チケット {TICKET_ID} のACと変更差分の実装を照合してください。
-  （チケットIDがない場合はこのレビューをスキップして FINDINGS: 0C 0W 0I と返す）
+  （チケットIDがない場合はこのレビューをスキップして FINDINGS: 0C 0W 0M 0I と返す）
 
   【PR ありモード（PR_NUMBER が指定されている場合）】
   手順:
@@ -362,13 +549,13 @@ Agent(
   手順:
   1. `{DIFF_CMD}` でローカル差分を取得
   2. `cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null` でAC情報を取得
-  3. AC情報が取得できない場合は FINDINGS: 0C 0W 0I と返す
+  3. AC情報が取得できない場合は FINDINGS: 0C 0W 0M 0I と返す
   4. 各AC項目を実装と照合し、漏れ・乖離・スコープクリープを検出
 
   出力形式:
   各ACに対して: AC項目 / 充足状態（✅/⚠️/❌）/ 対応実装箇所
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -398,7 +585,7 @@ Agent(
   1. `{DIFF_CMD}` でローカル差分を取得
   2. `cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null` でAC/テスト基準を取得
   3. 差分内の *Test.kt / *.test.ts / *.test.tsx ファイルを確認
-  4. AC情報が取得できない場合は FINDINGS: 0C 0W 0I と返す
+  4. AC情報が取得できない場合は FINDINGS: 0C 0W 0M 0I と返す
 
   チェック観点:
   - AC未カバーのテストケース
@@ -406,7 +593,7 @@ Agent(
   - エッジケース・異常系の不足
   - テスト間の依存関係（前のテストに依存）
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
@@ -446,21 +633,21 @@ Agent(
   - [重大度] ファイル名:行番号 - 問題の説明
   - Before/After コード例（改善後の実装を必ず示す）
 
-  最終行: FINDINGS: {critical}C {warning}W {info}I
+  最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """
 )
 ```
 
 ---
 
-## Phase 1.5（条件付き）: mihari によるテスト充足性深掘り
+## Phase 5（条件付き）: mihari によるテスト充足性深掘り
 
 > **実行条件（全て満たす場合のみ）**:
 > 1. `test-adequacy` レビュアーの結果が **Critical ≥ 1 OR Warning ≥ 2**
 > 2. `IS_OWN_PR=true`（テスト追加ができる自分のコード）
 > 3. 差分にテストファイルが含まれる（`git diff` に `*Test.kt` / `*.test.ts` 等が存在する）
 >
-> 上記いずれかを満たさない場合は **このPhaseをスキップ** してPhase 2へ進む。
+> 上記いずれかを満たさない場合は **このPhaseをスキップ** してPhase 6へ進む。
 
 ### 呼び出し
 
@@ -484,35 +671,44 @@ Skill("mihari") を呼び出す（内部ループスキル）
 
 | mihari 返却 | review-loop の扱い |
 |---|---|
-| `PASS` | test-adequacy の指摘をクリア扱いにしてPhase 2へ |
-| `FAIL` | mihari の残存指摘を test-adequacy 分に合算してPhase 2へ |
-| `ESCALATE` | mihari の結果をそのまま手動対応リストに追加してPhase 2へ |
+| `PASS` | test-adequacy の指摘をクリア扱いにしてPhase 6へ |
+| `FAIL` | mihari の残存指摘を test-adequacy 分に合算してPhase 6へ |
+| `ESCALATE` | mihari の結果をそのまま手動対応リストに追加してPhase 6へ |
 
-mihari が追加したテストは commit 対象に含める（Phase 3 の `git add -A` で自動的に含まれる）。
+mihari が追加したテストは commit 対象に含める（Phase 8 の `git add -A` で自動的に含まれる）。
 
 ---
 
-## Phase 2: 結果集計・ループ判定
+## Phase 6: 結果集計・ループ判定
 
-7エージェント完了後（mihari 呼び出し時はその結果も反映）、各出力末尾の `FINDINGS: XC YW ZI` 行をパースして集計する。
+7エージェント完了後（mihari 呼び出し時はその結果も反映）、各出力末尾の `FINDINGS: XC YW ZM VI` 行をパースして集計する。
+Phase 2 / 3 の gate findings は通常 reviewer と同じ重みで集計し、特に migration gate の Critical / Warning はループ判定から除外しない。
 
 ```
 Total Critical: X件
 Total Warning:  Y件
-Total Info:     Z件（修正対象外）
+Total Minor:    Z件（対応判断を必ず残す）
+Total Info:     W件（修正対象外。ただし運用リスク系はsummaryへ）
 ```
 
 **ループ継続判定**:
 
 | 条件 | アクション |
 |------|-----------|
-| Critical=0 AND Warning=0 | ✅ **完了** → Phase 4 |
-| IS_OWN_PR=false かつ 新規指摘なし（前回と同じ / 0件） | ⚠️ **収束** → Phase 4（コード修正できないため終了） |
-| IS_OWN_PR=false かつ iteration >= 3 | 🔚 **深掘りループ上限** → Phase 4 |
-| IS_OWN_PR=false かつ 新規指摘あり | 🔄 **Phase 3b へ（コメント投稿→再ループ）** |
-| 前回と全く同じ指摘（収束） | ⚠️ **手動対応が必要** → Phase 4 |
+| Critical=0 AND Warning=0 AND high confidence Minorの判断完了 | ✅ **完了** → Phase 10 |
+| IS_OWN_PR=false かつ 新規指摘なし（前回と同じ / 0件） | ⚠️ **収束** → Phase 10（コード修正できないため終了） |
+| IS_OWN_PR=false かつ iteration >= 3 | 🔚 **深掘りループ上限** → Phase 10 |
+| IS_OWN_PR=false かつ 新規指摘あり | 🔄 **Phase 9 へ（コメント投稿→再ループ）** |
+| 前回と全く同じ指摘（収束） | ⚠️ **手動対応が必要** → Phase 10 |
 | iteration >= 5 AND Critical/Warning > 0 | 🙋 **ユーザーに継続するか尋ねる** |
-| それ以外 | 🔄 **Phase 3 へ（修正して再ループ）** |
+| それ以外 | 🔄 **Phase 8 へ（修正して再ループ）** |
+
+**Minor / Info の扱い**:
+
+- Critical / Warning が 0 でも、high confidence の Minor は黙って捨てない
+- Minor は「対応済み」「対応不要」「別チケット」「スコープ外」のいずれかを Phase 10 の final summary に必ず残す
+- scope creep / test description / migration operation risk は Info でも summary に残す
+- Info は inline 投稿しなくてよい。ただし deterministic gate で拾った operational risk は final summary の補足に入れる
 
 **最大回数到達時のユーザー確認**:
 
@@ -536,27 +732,27 @@ B) いいえ — 残指摘をサマリーして終了
 
 ---
 
-## Phase 2.5: インラインコメントをPRに投稿
+## Phase 7: インラインコメントをPRに投稿
 
 > **⛔ `HAS_PR=false`（PR なしモード）の場合はこのPhaseをスキップ。**
 > PR が存在しない状態ではインラインコメントを投稿できない。GitHub 連携は PR 作成後に行う。
 
-6エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、
+7エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、
 GitHub PR Review として一括投稿する。
 
-### 2.5-1. JSONの抽出・統合
+### 7-1. JSONの抽出・統合
 
 各エージェント出力の `INLINE_COMMENTS_JSON:` ～ `INLINE_COMMENTS_JSON_END` の間を抽出し、
-全コメントを1つの配列に統合する。**Info (`<!-- info-only -->`) はここで除外する**（Critical/Warning のみ投稿）。
+全コメントを1つの配列に統合する。**Minor (`<!-- minor-only -->`) と Info (`<!-- info-only -->`) はここで除外する**（Critical/Warning のみ投稿）。
 
-### 2.5-2. ヘッドコミットSHAを取得
+### 7-2. ヘッドコミットSHAを取得
 
 ```bash
 COMMIT_ID=$(gh pr view {PR_NUMBER} --json headRefOid -q '.headRefOid')
 REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
 ```
 
-### 2.5-3. PRレビューとしてインラインコメントを一括投稿
+### 7-3. PRレビューとしてインラインコメントを一括投稿
 
 ```bash
 # comments を JSON で組み立てて gh api で送信
@@ -567,14 +763,14 @@ COMMENTS_JSON='[コメントの配列]'
 gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
   --method POST \
   --field commit_id="{COMMIT_ID}" \
-  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Info |\n|---|---|---|---|\n| コーディング規約 | X | Y | Z |\n| アーキテクチャ | X | Y | Z |\n| セキュリティ | X | Y | Z |\n| サイレント障害 | X | Y | Z |\n| 要件充足度 | X | Y | Z |\n| テスト妥当性 | X | Y | Z |\n| パフォーマンス | X | Y | Z |\n\n**合計: {total_critical}C / {total_warning}W**" \
+  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Minor | Info |\n|---|---|---|---|---|\n| External Signals Gate | X | Y | Z | W |\n| Database Migration Gate | X | Y | Z | W |\n| コーディング規約 | X | Y | Z | W |\n| アーキテクチャ | X | Y | Z | W |\n| セキュリティ | X | Y | Z | W |\n| サイレント障害 | X | Y | Z | W |\n| 要件充足度 | X | Y | Z | W |\n| テスト妥当性 | X | Y | Z | W |\n| パフォーマンス | X | Y | Z | W |\n\n**合計: {total_critical}C / {total_warning}W / {total_minor}M**" \
   --field event="COMMENT" \
   --field "comments={COMMENTS_JSON}"
 ```
 
 投稿後にレスポンスの `html_url` をログ出力してリンクを確認する。
 
-### 2.5-4. 投稿エラー時の扱い
+### 7-4. 投稿エラー時の扱い
 
 - `line` がdiff範囲外の場合 → `position` 指定に切り替えて再試行
 - それでも失敗した場合 → そのコメントをPR本文コメント（`gh pr comment`）にフォールバック
@@ -582,12 +778,12 @@ gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
 
 ---
 
-## Phase 3: 修正の適用
+## Phase 8: 修正の適用
 
 > **⛔ `IS_OWN_PR=false` の場合はこの Phase を丸ごとスキップ。**
 > 他人のPRへのコード修正・commit・push は絶対に行わない。
 
-### 3-1. コード修正（Critical / Warning のみ）
+### 8-1. コード修正（Critical / Warning + 対応する high confidence Minor）
 
 1. 指摘ファイルを `Read`
 2. `Edit` で修正を適用
@@ -595,8 +791,9 @@ gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
 
 **修正できない指摘の扱い**:
 設計判断・仕様確認が必要な指摘は自動修正せず「手動対応リスト」に追加してループから除外する。
+high confidence Minor は、自動修正するか、修正しない理由を「対応不要」「別チケット」「スコープ外」のいずれかで記録する。
 
-### 3-2. Commit & Push
+### 8-2. Commit & Push
 
 ```bash
 git add -A
@@ -609,7 +806,7 @@ if [ "$HAS_PR" = "true" ]; then
 fi
 ```
 
-### 3-3. 状態更新
+### 8-3. 状態更新
 
 `.omc/review-loop-state.json` を更新:
 ```json
@@ -619,8 +816,16 @@ fi
       "iteration": 1,
       "critical": 3,
       "warning": 5,
+      "minor": 1,
       "info": 2,
       "auto_fixed": 8,
+      "minor_dispositions": [
+        {
+          "finding": "migration operation risk の説明不足",
+          "decision": "対応済み",
+          "reason": "PR本文にlock影響とCONCURRENTLY不要理由を追記"
+        }
+      ],
       "manual_required": 0,
       "commit": "abc1234"
     }
@@ -630,14 +835,14 @@ fi
 
 ---
 
-## Phase 3b（他人のPR専用）: インラインコメント投稿
+## Phase 9（他人のPR専用）: インラインコメント投稿
 
 > **このPhaseは `IS_OWN_PR=false` の場合のみ実行する。コード修正・commit・push は絶対に行わない。**
 
 指摘をまとめて1件の一般PRコメントにするのではなく、
 GitHub Review APIを使って各指摘を**該当ファイルの該当行に紐づけたインラインコメント**として投稿する。
 
-### 3b-1. 投稿前の準備
+### 9-1. 投稿前の準備
 
 ```bash
 # HEADコミットSHA（Reviews APIに必須）
@@ -651,7 +856,7 @@ REPO=$(gh repo view --json name -q '.name')
 gh pr diff $PR_NUMBER > /tmp/pr.diff
 ```
 
-### 3b-2. 指摘のJSONへの変換
+### 9-2. 指摘のJSONへの変換
 
 各指摘の `ファイル名:行番号` を `comments[]` に変換する。
 
@@ -663,7 +868,7 @@ gh pr diff $PR_NUMBER > /tmp/pr.diff
 ```json
 {
   "commit_id": "<COMMIT_SHA>",
-  "body": "## 🤖 AI レビュー（review-loop）\n\nCritical: X件 / Warning: Y件 / Info: Z件",
+  "body": "## 🤖 AI レビュー（review-loop）\n\nCritical: X件 / Warning: Y件 / Minor: Z件 / Info: W件",
   "event": "COMMENT",
   "comments": [
     {
@@ -682,7 +887,7 @@ gh pr diff $PR_NUMBER > /tmp/pr.diff
 }
 ```
 
-### 3b-3. インラインコメントをバッチ投稿
+### 9-3. インラインコメントをバッチ投稿
 
 ```bash
 # 1リクエストで全インラインコメントを投稿
@@ -694,7 +899,7 @@ gh api repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews \
 **エラーハンドリング**:
 - 422 が返った場合 → 特定の `comments[]` エントリがdiff外。そのエントリを除いて再投稿し、除いた指摘は `fallback_comments` に移す
 
-### 3b-4. diff外指摘のフォールバック投稿
+### 9-4. diff外指摘のフォールバック投稿
 
 diff内に存在しない行への指摘（既存コードへの言及など）は、
 インラインとして投稿できないため、まとめて一般PRコメントとして追加する:
@@ -709,44 +914,51 @@ gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなか
 "
 ```
 
-### 3b-5. 深掘りループ継続判定
+### 9-5. 深掘りループ継続判定
 
 他人のPRはコードを修正できないが、**指摘の深掘り**のためにループを継続する（最大3回）。
 
-終了条件（いずれかを満たしたら Phase 4へ）：
+終了条件（いずれかを満たしたら Phase 10へ）：
 - 新たな指摘が0件だった（前回と同じ / 新規なし）
 - iteration >= 3（深掘りループ上限に達した）
 
 継続条件：
-- 新規の Critical / Warning が発見された → Iteration N+1 へ（Phase 1の深掘りモードで再実行）
+- 新規の Critical / Warning が発見された → Iteration N+1 へ（Phase 4の深掘りモードで再実行）
+- high confidence Minor が残る場合 → Phase 10 で判断を明記して終了するか、ユーザー文脈上 Warning 相当なら Warning に昇格して再ループする
 
 **継続時の処理**: `PREV_FINDINGS` に今回の指摘サマリーをセットし、次イテレーションの各エージェントへ渡す。次イテレーションでは「前回の指摘を前提として、見落とした観点・深掘りが必要な点を探す」深掘りモードで実行する。
 
 ---
 
-## Phase 4: 完了レポート
+## Phase 10: 完了レポート
 
 ### ✅ クリーン達成（PR ありモード）
 
 ```
 ## ✅ Review Loop 完了 — Critical/Warning がゼロになりました！
 
-| Iter | Critical | Warning | Info | Auto-fix | PR Review |
-|------|----------|---------|------|----------|-----------|
-| #1   |        3 |       5 |    2 |        8 | https://github.com/…/pull/N#pullrequestreview-xxx |
-| #2   |        1 |       2 |    1 |        3 | https://github.com/…/pull/N#pullrequestreview-yyy |
-| #3   |        0 |       0 |    1 |        — | —                                                  |
+| Iter | Critical | Warning | Minor | Info | Auto-fix | PR Review |
+|------|----------|---------|-------|------|----------|-----------|
+| #1   |        3 |       5 |     1 |    2 |        8 | https://github.com/…/pull/N#pullrequestreview-xxx |
+| #2   |        1 |       2 |     1 |    1 |        3 | https://github.com/…/pull/N#pullrequestreview-yyy |
+| #3   |        0 |       0 |     1 |    1 |        — | —                                                  |
 
 観点別サマリー（最終イテレーション）:
-| 観点 | Critical | Warning | Info |
-|---|---|---|---|
-| コーディング規約 | 0 | 0 | 0 |
-| アーキテクチャ | 0 | 0 | 0 |
-| セキュリティ | 0 | 0 | 0 |
-| サイレント障害 | 0 | 0 | 0 |
-| 要件充足度 | 0 | 0 | 0 |
-| テスト妥当性 | 0 | 0 | 0 |
-| パフォーマンス | 0 | 0 | 0 |
+| 観点 | Critical | Warning | Minor | Info |
+|---|---|---|---|---|
+| External Signals Gate | 0 | 0 | 0 | 0 |
+| Database Migration Gate | 0 | 0 | 1 | 0 |
+| コーディング規約 | 0 | 0 | 0 | 0 |
+| アーキテクチャ | 0 | 0 | 0 | 0 |
+| セキュリティ | 0 | 0 | 0 | 0 |
+| サイレント障害 | 0 | 0 | 0 | 0 |
+| 要件充足度 | 0 | 0 | 0 | 0 |
+| テスト妥当性 | 0 | 0 | 0 | 0 |
+| パフォーマンス | 0 | 0 | 0 | 0 |
+
+Minor判断:
+- [対応済み] migration operation risk - PR本文にlock影響とCONCURRENTLY要否を記載
+- [対応不要] test description wording - 実装リスクではなく説明品質のみのため
 
 総修正: 11件 / 3イテレーション
 PRはレビュー観点でクリーンな状態です。
@@ -758,22 +970,27 @@ PRはレビュー観点でクリーンな状態です。
 ```
 ## ✅ Review Loop 完了 — Critical/Warning がゼロになりました！
 
-| Iter | Critical | Warning | Info | Auto-fix | Commit  |
-|------|----------|---------|------|----------|---------|
-| #1   |        3 |       5 |    2 |        8 | abc1234 |
-| #2   |        1 |       2 |    1 |        3 | def5678 |
-| #3   |        0 |       0 |    1 |        — | —       |
+| Iter | Critical | Warning | Minor | Info | Auto-fix | Commit  |
+|------|----------|---------|-------|------|----------|---------|
+| #1   |        3 |       5 |     1 |    2 |        8 | abc1234 |
+| #2   |        1 |       2 |     1 |    1 |        3 | def5678 |
+| #3   |        0 |       0 |     1 |    1 |        — | —       |
 
 観点別サマリー（最終イテレーション）:
-| 観点 | Critical | Warning | Info |
-|---|---|---|---|
-| コーディング規約 | 0 | 0 | 0 |
-| アーキテクチャ | 0 | 0 | 0 |
-| セキュリティ | 0 | 0 | 0 |
-| サイレント障害 | 0 | 0 | 0 |
-| 要件充足度 | 0 | 0 | 0 |
-| テスト妥当性 | 0 | 0 | 0 |
-| パフォーマンス | 0 | 0 | 0 |
+| 観点 | Critical | Warning | Minor | Info |
+|---|---|---|---|---|
+| External Signals Gate | 0 | 0 | 0 | 0 |
+| Database Migration Gate | 0 | 0 | 1 | 0 |
+| コーディング規約 | 0 | 0 | 0 | 0 |
+| アーキテクチャ | 0 | 0 | 0 | 0 |
+| セキュリティ | 0 | 0 | 0 | 0 |
+| サイレント障害 | 0 | 0 | 0 | 0 |
+| 要件充足度 | 0 | 0 | 0 | 0 |
+| テスト妥当性 | 0 | 0 | 0 | 0 |
+| パフォーマンス | 0 | 0 | 0 | 0 |
+
+Minor判断:
+- [スコープ外] APP-XXXX由来の無関係なdocs差分 - 今回PRからは除外済み
 
 総修正: 11件 / 3イテレーション
 コードはレビュー観点でクリーンな状態です。
@@ -804,9 +1021,11 @@ PR Review URL: https://github.com/…/pull/N#pullrequestreview-zzz
 - **⛔ 他人のPRは修正禁止**: PRの作成者が自分でない場合、Edit・commit・push は一切行わない
 - **PR ありモード: commit & push はイテレーション毎に実行**する（次のレビューが最新の差分を見るために必須）
 - **PR なしモード: commit のみ、push は行わない**（呼び出し元 T5 の Push 確認まで push を保留）
-- **PR ありモード: インラインコメントはイテレーション毎に投稿**する（Phase 2.5 は各イテレーションで必ず実行）
-- **PR なしモード: Phase 2.5（インラインコメント投稿）はスキップ**する
-- **Info はインラインコメントから除外**する（`<!-- info-only -->` タグでフィルタリング）
+- **PR ありモード: インラインコメントはイテレーション毎に投稿**する（Phase 7 は各イテレーションで必ず実行）
+- **PR なしモード: Phase 7（インラインコメント投稿）はスキップ**する
+- **Minor / Info はインラインコメントから除外**する（`<!-- minor-only -->` / `<!-- info-only -->` タグでフィルタリング）
+- **Critical/Warning が0でも即完了にしない**。high confidence Minor の対応判断を final summary に残してから完了する
+- **External Signals Gate / Database Migration Gate の結果は reviewer と同じ入力**として扱う。failed CI や既存 review thread を「参考情報」として読み捨てない
 - **手動対応リストに入った指摘**は以降のループ判定から除外する
 - **このスキルは featureブランチのみ**で使用する（mainへの直接pushは行わない）
 - **インラインコメント投稿失敗はループを止めない**（フォールバックとして `gh pr comment` を使用）
