@@ -1,11 +1,15 @@
 ---
-name: mihari
-description: "テスト充足性を多観点で反復レビューするスキル。3並列エージェント（等価分割/境界値、デシジョン/状態遷移、エラー推測/副作用）で指摘が出なくなるまでループする。テストの観点網羅を担保したい開発フローから呼び出される。明示的に「/mihari」と指示された場合、または他スキル（kouunryuusui 等）から呼び出された場合に使用。"
 aliases:
-  - test-mihari
+    - test-mihari
+description: テスト充足性を多観点で反復レビューするスキル。3並列エージェント（等価分割/境界値、デシジョン/状態遷移、エラー推測/副作用）で指摘が出なくなるまでループする。テストの観点網羅を担保したい開発フローから呼び出される。明示的に「/mihari」と指示された場合、または他スキル（kouunryuusui 等）から呼び出された場合に使用。
 license: MIT
+metadata:
+    github-path: skills/mihari
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: c50407f53f7428b49dbd477a544fdee9cbb8e4d4
+name: mihari
 ---
-
 # 見張り（mihari） $ARGUMENTS
 
 **テストが観点的に十分か** を多角的に検証し、指摘が出なくなるまで反復する専門スキル。
