@@ -7,7 +7,7 @@ metadata:
     github-path: skills/kouunryuusui
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 88e0e01ec5214bc5b265e6482ad85f236d2b658f
+    github-tree-sha: f38894079dbc08509efad41c57ca21682b3c642a
 name: kouunryuusui
 ---
 # 行雲流水（kouunryuusui） $ARGUMENTS
