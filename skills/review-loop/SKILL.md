@@ -1,11 +1,11 @@
 ---
-description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。7観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性・パフォーマンス）を並列レビューし、テスト不足が検出された場合はmihariスキルを自動呼び出しして深掘り補完する。修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
+description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。8観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性・パフォーマンス・意味論的整合性）を並列レビューし、テスト不足が検出された場合はmihariスキルを自動呼び出しして深掘り補完する。修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
 license: MIT
 metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 6d2119dded1b2fa16c0297ff83fa8b6ad2e8ba80
+    github-tree-sha: ff29f7e46dfe77d50eb5a5cee4a4ff672ed885f5
 name: review-loop
 ---
 # review-loop
@@ -29,7 +29,7 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
   ├─ Phase 3: Database Migration Gate（migration差分がある場合のみ）
   │    Flyway version / timestamp / index / lock / scopeをdeterministicに確認する
   │
-  ├─ 7観点を並列レビュー（run_in_background: true × 7）
+  ├─ 8観点を並列レビュー（run_in_background: true × 8）
   │
   ├─ 全指摘を統合・集計
   │    Critical: X件 / Warning: Y件 / Minor: Z件 / Info: W件
@@ -109,10 +109,11 @@ fi
 | requirements | **sonnet** | sonnet | sonnet |
 | test-adequacy | **sonnet** | sonnet | sonnet |
 | performance | **sonnet** | sonnet | sonnet |
+| semantic-consistency | **sonnet** | sonnet | sonnet |
 
 - `silent-failure` は常にhaiku（パターン検出が主体で判断不要）
 - `coding-rules` はIteration 1 かつ diff が大きい場合のみsonnet（初回網羅後は差分確認のみ）
-- `architecture / security / requirements / test-adequacy / performance` は常にsonnet（意味理解・判断が必要）
+- `architecture / security / requirements / test-adequacy / performance / semantic-consistency` は常にsonnet（意味理解・判断が必要）
 
 ### 自分のPRかどうかの判定（修正可否の決定）
 
@@ -192,107 +193,11 @@ fi
 
 > **⛔ `HAS_PR=false`（PRなしモード）の場合はこのPhaseをスキップ。**
 
-AIレビューを始める前に、GitHub上の既存シグナルを必ず取得し、以降のレビュアーへ渡す `MUST_RECHECK_TOPICS` を作る。
-failed check や既存 review thread は「参考情報」ではなく、review-loop の入力として扱う。
+AI レビューを始める前に、GitHub 上の既存シグナル（`statusCheckRollup` / review threads / PR body）を取得し、以降のレビュアーへ渡す `MUST_RECHECK_TOPICS` を作る。failed check や既存 review thread は「参考情報」ではなく、review-loop の入力として扱う。
 
-### 2-1. PR metadata / CI / review signals の取得
+**詳細手順（必須コマンド・GraphQL クエリ・出力フォーマット）は [`references/external-signals-gate.md`](references/external-signals-gate.md) を参照すること。** Phase 2 を実行する時はそのファイルを読んで該当セクション（2-1 / 2-2 / 2-3 / 2-4）の手順を使う。
 
-```bash
-gh pr view {PR_NUMBER} --json statusCheckRollup,latestReviews,files,commits,body
-```
-
-GraphQL で review threads を取得する:
-
-```bash
-OWNER=$(gh repo view --json owner -q '.owner.login')
-REPO=$(gh repo view --json name -q '.name')
-
-gh api graphql -f owner="$OWNER" -f repo="$REPO" -F number="{PR_NUMBER}" -f query='
-query($owner: String!, $repo: String!, $number: Int!) {
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100) {
-        nodes {
-          isResolved
-          comments(first: 20) {
-            nodes {
-              path
-              line
-              body
-              author { login }
-              createdAt
-            }
-          }
-        }
-      }
-    }
-  }
-}'
-```
-
-### 2-2. failed check の root cause を先に確定
-
-`statusCheckRollup` に failed / error / cancelled check がある場合は、通常レビューより先に以下を要約する:
-
-- failing job / failing Gradle task / failing step
-- root error（最初の meaningful な exception / assertion / linter message）
-- 既知 reviewer 指摘との対応関係
-- review-loopで必ず再確認するカテゴリ
-
-特に以下は deterministic gate として扱い、見つかった時点で `MUST_RECHECK_TOPICS` に入れる:
-
-- Migration Version Check
-- Backend PR Check
-- ktlint / formatter
-- unit / integration / migration test failure
-
-failed Migration Version Check は **Critical** として扱う。CI failure の原因が未確定のまま Phase 4 へ進まない。
-
-### 2-3. review threads から MUST_RECHECK_TOPICS を作る
-
-既存 review thread をカテゴリ化し、重複投稿ではなく横展開レビューの起点にする:
-
-- migration version / timestamp / ordering
-- index naming / index operation risk / query shape
-- enum / constant / partial index predicate
-- scope creep / unrelated files
-- tenant isolation / authorization
-- tests / fixtures / seed / setup script
-
-`MUST_RECHECK_TOPICS` の各項目は、少なくとも以下を持つ:
-
-```json
-{
-  "source": "failed-check|review-thread|latest-review|pr-body",
-  "severity_hint": "Critical|Warning|Minor|Info",
-  "category": "migration-version",
-  "summary": "Migration Version Check failed because V202605... already exists on main",
-  "paths": ["backend/src/main/resources/db/migration/V202605...__example.sql"],
-  "required_followups": [
-    "同一Flyway versionがmainに存在しないか",
-    "main最新migrationより新しいtimestampか",
-    "CI gateで同じ失敗が解消されたか"
-  ]
-}
-```
-
-### 2-4. 出力フォーマット
-
-```
-EXTERNAL_SIGNALS_FINDINGS:
-- [Critical] Migration Version Check - failed check の root cause が Flyway version collision の可能性を示している
-- [Warning] review-thread:backend/src/main/resources/db/migration/V202605...__foo.sql:12 - index operation risk の既存指摘あり
-EXTERNAL_SIGNALS_FINDINGS_END
-
-MUST_RECHECK_TOPICS:
-- category: migration-version
-  summary: failed Migration Version Check のroot cause、同一version、timestamp最新性、migration orderingを確認する
-- category: scope-creep
-  summary: PR body / ticket ID / changed filesを照合し、別チケット変更が混入していないか確認する
-MUST_RECHECK_TOPICS_END
-
-FINDINGS: {critical}C {warning}W {minor}M {info}I
-```
+出力末尾は必ず `FINDINGS: {critical}C {warning}W {minor}M {info}I` 行で締める。failed Migration Version Check は **Critical** として扱い、CI failure の root cause が未確定のまま Phase 4 へ進まない。
 
 ---
 
@@ -302,66 +207,20 @@ FINDINGS: {critical}C {warning}W {minor}M {info}I
 
 このPhaseは通常 reviewer とは別に必ず実行する。結果は `MIGRATION_GATE_FINDINGS` として Phase 6 の集計対象に含め、同時に `MUST_RECHECK_TOPICS` へ追加して Phase 4 の全レビュアーへ渡す。
 
-### 3-1. 必須コマンド
+**詳細手順（必須コマンド・必須確認項目・重大度基準・出力フォーマット）は [`references/database-migration-gate.md`](references/database-migration-gate.md) を参照すること。** Phase 3 を実行する時はそのファイルを読んで該当セクション（3-1 / 3-2 / 3-3 / 3-4）の手順を使う。
 
-```bash
-git fetch origin main
-git diff --name-status origin/main...HEAD
-git diff origin/main...HEAD -- backend/src/main/resources/db/migration
-ls backend/src/main/resources/db/migration | sort | tail -30
-rg -n "V[0-9]+\\.[0-9]+__" backend/src/main/resources/db/migration
-```
+主要な deterministic gate（必ず Critical として扱う条件）:
+- 同一 Flyway version collision
+- failed Migration Version Check
+- main 最新 migration より古い timestamp
 
-`docs/coding-rules/database.md` が存在する場合は、migration / index 規約の真実ソースとして必ず読む。
-
-### 3-2. 必須確認
-
-- 新規 migration の version が main 最新より新しいか
-- 同一 Flyway version が main に存在しないか
-- migration filename と PR マージ時点の timestamp が妥当か
-- index 名が `docs/coding-rules/database.md` の規約に合うか
-- `CREATE INDEX` の lock 影響と `CONCURRENTLY` 要否が説明・判断されているか
-- partial index の predicate が Kotlin enum / query constant / CHECK 制約と二重管理になっていないか
-- 対象 query の `WHERE` / `ORDER BY` / `LIMIT` と index column order が整合するか
-- `tenant_id` を含める / 含めない判断が query shape と一致しているか
-- migration-only PR に scope 外の Kotlin / frontend / docs 変更が混入していないか
-
-### 3-3. 重大度基準
-
-| 条件 | 重大度 |
-|---|---|
-| 同一 Flyway version collision | Critical |
-| failed Migration Version Check | Critical |
-| main 最新 migration より古い timestamp | Critical または Major相当（review-loop上は Critical / Warning のどちらかに正規化） |
-| index naming 規約違反 | Warning以上 |
-| `CREATE INDEX` の lock 影響説明なし | Warning |
-| partial index の enum 文字列ハードコード | Warning以上 |
-| query shape と index column order の不整合 | Warning以上 |
-| migration-only PR の scope 外変更混入 | Warning または Minor（ユーザーが scope を厳密に求める文脈では Warning） |
-
-### 3-4. 出力フォーマット
-
-```
-MIGRATION_GATE_FINDINGS:
-- [Critical] backend/src/main/resources/db/migration/V202605...__foo.sql:1 - 同一Flyway versionがorigin/mainに存在する
-- [Warning] backend/src/main/resources/db/migration/V202605...__foo.sql:12 - CREATE INDEXのlock影響とCONCURRENTLY要否が説明されていない
-MIGRATION_GATE_FINDINGS_END
-
-MUST_RECHECK_TOPICS_APPEND:
-- category: migration-version
-  summary: Flyway collision / timestamp / ordering / CI gateを横断確認する
-- category: partial-index-predicate
-  summary: Kotlin enum / query constant / CHECK制約 / 将来enum追加時の性能退行を横断確認する
-MUST_RECHECK_TOPICS_APPEND_END
-
-FINDINGS: {critical}C {warning}W {minor}M {info}I
-```
+出力末尾は必ず `FINDINGS: {critical}C {warning}W {minor}M {info}I` 行で締め、`MUST_RECHECK_TOPICS_APPEND` で Phase 4 のレビュアーに横展開する。
 
 ---
 
-## Phase 4（各イテレーション）: 7観点並列レビュー
+## Phase 4（各イテレーション）: 8観点並列レビュー
 
-**1メッセージで7つのAgentを同時起動**（`run_in_background: true`）。
+**1メッセージで8つのAgentを同時起動**（`run_in_background: true`）。
 
 各レビュアーへの共通追加指示:
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
@@ -417,7 +276,7 @@ INLINE_COMMENTS_JSON_END
 - **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 7 でフィルタリングに使用）
 - 指摘がない場合は空配列 `[]` を出力する
 
-### 7観点のレビュアー Agent
+### 8観点のレビュアー Agent
 
 各レビュアーの **Agent 起動プロンプト全文** は [`references/reviewer-prompts.md`](references/reviewer-prompts.md) に切り出している。Phase 4 を実行する時は、そのファイルを読んで該当セクションの Agent テンプレートを使うこと。
 
@@ -430,8 +289,9 @@ INLINE_COMMENTS_JSON_END
 | 5 | requirements | 常に sonnet | チケット AC との照合・スコープクリープ |
 | 6 | test-adequacy | 常に sonnet | AC未カバー・期待結果の曖昧さ・エッジケース |
 | 7 | performance | 常に sonnet | N+1・不要 SELECT・バッチ未使用・キャッシュ未活用 |
+| 8 | semantic-consistency | 常に sonnet | コメント宣言と実装の乖離・既存類似実装との横並び不整合・複合スナップショットの時系列不整合 |
 
-詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜7）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す。
+詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜8）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す。
 
 ---
 
@@ -537,44 +397,11 @@ B) いいえ — 残指摘をサマリーして終了
 > **⛔ `HAS_PR=false`（PR なしモード）の場合はこのPhaseをスキップ。**
 > PR が存在しない状態ではインラインコメントを投稿できない。GitHub 連携は PR 作成後に行う。
 
-7エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、
-GitHub PR Review として一括投稿する。
+8 エージェントの出力から `INLINE_COMMENTS_JSON:` ブロックを全て抽出・統合し、GitHub PR Review として一括投稿する。**Minor / Info はここで除外**（Critical/Warning のみ投稿）。
 
-### 7-1. JSONの抽出・統合
+**詳細手順（JSON 抽出ルール・ヘッドコミット SHA 取得・`gh api` 投稿コマンド・エラーフォールバック）は [`references/inline-comment-posting.md`](references/inline-comment-posting.md) を参照すること。** Phase 7 を実行する時はそのファイルを読んで該当セクション（7-1 / 7-2 / 7-3 / 7-4）の手順を使う。
 
-各エージェント出力の `INLINE_COMMENTS_JSON:` ～ `INLINE_COMMENTS_JSON_END` の間を抽出し、
-全コメントを1つの配列に統合する。**Minor (`<!-- minor-only -->`) と Info (`<!-- info-only -->`) はここで除外する**（Critical/Warning のみ投稿）。
-
-### 7-2. ヘッドコミットSHAを取得
-
-```bash
-COMMIT_ID=$(gh pr view {PR_NUMBER} --json headRefOid -q '.headRefOid')
-REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner')
-```
-
-### 7-3. PRレビューとしてインラインコメントを一括投稿
-
-```bash
-# comments を JSON で組み立てて gh api で送信
-# 例: jq を使って動的に組み立てる
-
-COMMENTS_JSON='[コメントの配列]'
-
-gh api "repos/{REPO}/pulls/{PR_NUMBER}/reviews" \
-  --method POST \
-  --field commit_id="{COMMIT_ID}" \
-  --field body="## AI Review Loop — Iteration {N}\n\n| 観点 | Critical | Warning | Minor | Info |\n|---|---|---|---|---|\n| External Signals Gate | X | Y | Z | W |\n| Database Migration Gate | X | Y | Z | W |\n| コーディング規約 | X | Y | Z | W |\n| アーキテクチャ | X | Y | Z | W |\n| セキュリティ | X | Y | Z | W |\n| サイレント障害 | X | Y | Z | W |\n| 要件充足度 | X | Y | Z | W |\n| テスト妥当性 | X | Y | Z | W |\n| パフォーマンス | X | Y | Z | W |\n\n**合計: {total_critical}C / {total_warning}W / {total_minor}M**" \
-  --field event="COMMENT" \
-  --field "comments={COMMENTS_JSON}"
-```
-
-投稿後にレスポンスの `html_url` をログ出力してリンクを確認する。
-
-### 7-4. 投稿エラー時の扱い
-
-- `line` がdiff範囲外の場合 → `position` 指定に切り替えて再試行
-- それでも失敗した場合 → そのコメントをPR本文コメント（`gh pr comment`）にフォールバック
-- **インラインコメント投稿失敗はレビューループを止めない**（修正フェーズは続行する）
+**インラインコメント投稿失敗はレビューループを止めない**（フォールバックとして `gh pr comment` を使用、修正フェーズは続行）。
 
 ---
 
@@ -676,94 +503,9 @@ fi
 
 > **このPhaseは `IS_OWN_PR=false` の場合のみ実行する。コード修正・commit・push は絶対に行わない。**
 
-指摘をまとめて1件の一般PRコメントにするのではなく、
-GitHub Review APIを使って各指摘を**該当ファイルの該当行に紐づけたインラインコメント**として投稿する。
+指摘をまとめて 1 件の一般 PR コメントにするのではなく、GitHub Review API を使って各指摘を**該当ファイルの該当行に紐づけたインラインコメント**として投稿する。深掘りループは最大 3 回、新規指摘が出なくなったら終了。
 
-### 9-1. 投稿前の準備
-
-```bash
-# HEADコミットSHA（Reviews APIに必須）
-COMMIT_SHA=$(gh pr view $PR_NUMBER --json headRefOid -q '.headRefOid')
-
-# リポジトリ情報
-OWNER=$(gh repo view --json owner -q '.owner.login')
-REPO=$(gh repo view --json name -q '.name')
-
-# diff内の追加行を確認（行番号の妥当性チェックに使用）
-gh pr diff $PR_NUMBER > /tmp/pr.diff
-```
-
-### 9-2. 指摘のJSONへの変換
-
-各指摘の `ファイル名:行番号` を `comments[]` に変換する。
-
-**変換ルール**:
-- diff内の追加行（`+` 行）への指摘 → `comments[]` に追加（`"side": "RIGHT"`）
-- diff外・削除行・行番号不明の指摘 → `fallback_comments` リストに退避
-
-**投稿するJSONの構造**:
-```json
-{
-  "commit_id": "<COMMIT_SHA>",
-  "body": "## 🤖 AI レビュー（review-loop）\n\nCritical: X件 / Warning: Y件 / Minor: Z件 / Info: W件",
-  "event": "COMMENT",
-  "comments": [
-    {
-      "path": "src/main/kotlin/FooService.kt",
-      "line": 42,
-      "side": "RIGHT",
-      "body": "**[Critical]** 問題の説明\n\n**Before:**\n```kotlin\n// 修正前のコード\n```\n\n**After:**\n```kotlin\n// 修正後のコード\n```"
-    },
-    {
-      "path": "src/main/kotlin/BarController.kt",
-      "line": 17,
-      "side": "RIGHT",
-      "body": "**[Warning]** 問題の説明"
-    }
-  ]
-}
-```
-
-### 9-3. インラインコメントをバッチ投稿
-
-```bash
-# 1リクエストで全インラインコメントを投稿
-gh api repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews \
-  --method POST \
-  --input /tmp/review-inline.json
-```
-
-**エラーハンドリング**:
-- 422 が返った場合 → 特定の `comments[]` エントリがdiff外。そのエントリを除いて再投稿し、除いた指摘は `fallback_comments` に移す
-
-### 9-4. diff外指摘のフォールバック投稿
-
-diff内に存在しない行への指摘（既存コードへの言及など）は、
-インラインとして投稿できないため、まとめて一般PRコメントとして追加する:
-
-```bash
-gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなかった指摘）
-
-以下の指摘はdiff外のため、インラインコメントで紐づけできませんでした。
-
-- **[Critical]** FooService.kt 付近: 問題の説明
-- **[Warning]** BarHelper.kt 付近: 問題の説明
-"
-```
-
-### 9-5. 深掘りループ継続判定
-
-他人のPRはコードを修正できないが、**指摘の深掘り**のためにループを継続する（最大3回）。
-
-終了条件（いずれかを満たしたら Phase 10へ）：
-- 新たな指摘が0件だった（前回と同じ / 新規なし）
-- iteration >= 3（深掘りループ上限に達した）
-
-継続条件：
-- 新規の Critical / Warning が発見された → Iteration N+1 へ（Phase 4の深掘りモードで再実行）
-- high confidence Minor が残る場合 → Phase 10 で判断を明記して終了するか、ユーザー文脈上 Warning 相当なら Warning に昇格して再ループする
-
-**継続時の処理**: `PREV_FINDINGS` に今回の指摘サマリーをセットし、次イテレーションの各エージェントへ渡す。次イテレーションでは「前回の指摘を前提として、見落とした観点・深掘りが必要な点を探す」深掘りモードで実行する。
+**詳細手順（HEAD SHA 取得・JSON 変換ルール・バッチ投稿・エラーハンドリング・フォールバック・深掘り継続判定）は [`references/foreign-pr-mode.md`](references/foreign-pr-mode.md) を参照すること。** Phase 9 を実行する時はそのファイルを読んで該当セクション（9-1 〜 9-5）の手順を使う。
 
 ---
 
@@ -782,7 +524,7 @@ gh pr comment $PR_NUMBER --body "## 🤖 AI レビュー（行特定できなか
 ### 共通の構成
 
 - イテレーション別の件数テーブル（Critical / Warning / Minor / Info / Auto-fix / PR Review or Commit）
-- 観点別サマリー（External Signals Gate / Database Migration Gate / 7 観点）
+- 観点別サマリー（External Signals Gate / Database Migration Gate / 8 観点）
 - Minor 判断（対応済み / 対応不要 / 別チケット / スコープ外）
 - **修正ジャーナル**（`IS_OWN_PR=true` のときのみ）— `state.iterations[].fixes[]` をイテレーション昇順に展開
 - 残指摘ありの場合は「手動対応が必要な指摘」セクションを末尾に追加

@@ -161,6 +161,7 @@ review-patterns.md の「判定出力フォーマット」に従い、Critical /
 | assertion の多角性 | 1テストに意味のある assertion が2つ以上（戻り値 + 副作用、状態 + イベント等） | 1 assertion のみ → Warning |
 | 空テスト | `assertTrue(true)`、`// TODO` 等 | 検出 → Critical（即 T3 差し戻し） |
 | エラーメッセージの検証 | 例外発生時のメッセージ・エラーコード | 例外テストで message/code 未検証 → Warning |
+| **fixture/seed が本番経路を再現しているか** | 実装が参照する全テーブル／ビュー（特に `*_history_view` / `*_snapshot` / `audit_*` / `*_log` 系）を test setup が seed しているか | 実装読み込みテーブルの seed 漏れ → **Critical**（テストが pass しても本番で壊れる）。意図的なモック注入なら DR 記録で Warning に格下げ可 |
 
 ### 判定出力フォーマット
 
@@ -206,6 +207,11 @@ review-patterns.md の「判定出力フォーマット」に従い、Critical /
 6. assertion の具体性（assertNotNull だけでないか）
 7. 空テスト・TODO テストの検出
 8. 例外テストでの message/code 検証
+9. fixture/seed が本番経路を再現しているか
+   - 実装ファイルで参照される全テーブル・ビュー名を `rg` で抽出
+   - test setup / helper で seed されているかを照合
+   - 特に `*_history_view` / `*_snapshot` / `audit_*` / `*_log` 系の seed 漏れは Critical
+   - 意図的なモック注入の場合は DR 記録で Warning に格下げ可
 
 【出力】
 review-patterns.md の「判定出力フォーマット」に従う。
@@ -233,6 +239,7 @@ review-patterns.md の「判定出力フォーマット」に従う。
 | 副作用 assertion | — | — | ✅ |
 | assertion 具体性・多角性 | — | — | ✅ |
 | 空テスト検出 | — | — | ✅ |
+| fixture/seed の本番経路再現 | — | — | ✅ |
 
 > **重複禁止**: Agent 間で同じ観点を指摘したら、loop-protocol.md の「指摘集約」ルールに従って1件に統合する。
 
