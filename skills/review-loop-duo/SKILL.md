@@ -1,12 +1,13 @@
 ---
-name: review-loop-duo
 description: review-loop を Claude と Codex CLI の 2 モデルで「並列に」回し、両者の指摘を統合して Critical/Warning がゼロになるまでループするスキル。Claude の 7 観点並列レビューと Codex CLI（`codex exec` / `codex review`）の独立レビューを各イテレーションで同時起動し、両モデルが合致した指摘は信頼度を昇格、片方だけの指摘は精査ラベルを付けて統合する。「review-loop-duo」「duo review」「並列レビュー」「Claude と Codex 両方でレビュー」「2 つのモデルでクロスレビュー」「dual review」「review-loop codex」「Claude だけだと不安だから Codex も並走」「セカンドオピニオン込みでレビューループ」「両方の AI でゼロになるまで」などの発言で必ずこのスキルを使うこと。単体 `review-loop`（Claude のみ）と単体 `codex-cli`（Codex 単発）に対し、本スキルは「両者を同期させたループ」を提供する。指摘の網羅性を最優先したい時、片方のモデルが見落とすリスクを許容したくない時、PR の重要度が高い時にも積極的に発動してよい。
 license: MIT
 metadata:
-  github-path: skills/review-loop-duo
-  github-repo: https://github.com/FScoward/senju
+    github-path: skills/review-loop-duo
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: a8d3c7cd9c9111b16bd7683f06d10c9b2aa55a55
+name: review-loop-duo
 ---
-
 # review-loop-duo
 
 `review-loop` を **Claude（7 観点並列）** と **Codex CLI（独立 1 レビュー）** の 2 モデルで同時に回し、
@@ -286,6 +287,36 @@ Minor/Info は `review-loop` と同じく `<!-- minor-only -->` / `<!-- info-onl
 4. `CLAUDE_ONLY Warning` / `CODEX_VALID Warning`
 5. high confidence Minor（判断のみ）
 
+### 修正ジャーナル収集（duo 拡張）
+
+`review-loop` の Phase 8-1 と同じ手順で `state.iterations[N].fixes[]` を append するが、
+**各エントリに `confidence` フィールドを必ず付与する**。値は Phase 6-3 で確定したラベルを引き継ぐ:
+
+```json
+{
+  "finding": {
+    "reviewer": "security",
+    "severity": "Critical",
+    "path": "src/foo/Bar.kt",
+    "line": 42,
+    "category": "tenant-isolation",
+    "summary": "tenantIdフィルタ漏れ"
+  },
+  "intent": "認可境界の侵害。tenantId必須化でIDORを防ぐ",
+  "change": "OrderRepository.findById → findByIdAndTenantId に置換",
+  "confidence": "CONFIRMED"
+}
+```
+
+`confidence` の取り得る値:
+- `CONFIRMED`: Claude と Codex の両方が指摘（最優先で修正、最高信頼度）
+- `CLAUDE_ONLY`: Claude のみが指摘
+- `CODEX_VALID`: Codex のみが指摘し、Phase 6-3 で Claude が精査済み・採用
+
+`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正対象外なので `fixes[]` に積まない。
+
+### コミット
+
 commit メッセージは duo であることを明記:
 
 ```bash
@@ -322,6 +353,41 @@ Codex タイムアウト: ${CODEX_TIMEOUT_COUNT} 回
 agreement rate が低い（< 30%）場合は、両モデルの観点に大きな差があることを意味する。
 報告に「Claude と Codex で観点ズレが大きい。指摘の独立性が高く、見逃しリスクが低かった可能性」と添えると有用。
 
+### 修正ジャーナル（自分PR・duo 版）
+
+`IS_OWN_PR=true` のときのみ、`review-loop` Phase 10 のジャーナルに加えて
+各エントリの見出しに **confidence ラベル** を付ける:
+
+```
+## 修正ジャーナル（自分PR）
+
+### Iteration 1
+#### [Critical] [CONFIRMED] src/foo/Bar.kt:42  (security / tenant-isolation)
+- 検知: tenantIdフィルタ漏れで他テナントの注文を読める（Claude + Codex 一致）
+- 意図: 認可境界の侵害。tenantId必須化でIDORを防ぐ
+- 修正: OrderRepository.findById → findByIdAndTenantId に置換
+- commit: abc1234
+
+#### [Warning] [Codex-valid] src/foo/Cache.kt:88  (performance / cache-miss)
+- 検知: 同一クエリのキャッシュ未活用（Codex のみ、Claude 精査済み）
+- 意図: N+1 ではないが繰り返しヒットで latency 増。LRU で十分軽減できる
+- 修正: Caffeine.builder().maximumSize(256).build() を導入
+- commit: def5678
+
+### Iteration 2
+#### [Warning] [Claude-only] src/foo/Util.kt:17  (silent-failure / empty-catch)
+- 検知: catch (Exception) で握りつぶし、ログなし（Claude のみ）
+- 意図: サイレント障害化する
+- 修正: logger.error 追加 + DomainException に変換
+- commit: ghi9012
+
+### Iteration 3
+✅ 完了（Critical/Warning ゼロ）
+```
+
+`confidence` ラベルを見出しに出すことで、後から「両モデル合意の指摘」と「片方のみの指摘」を識別できる。
+`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正していないのでジャーナルに出ない（既存の duo 統計テーブルで件数のみ示す）。
+
 ---
 
 ## エラーハンドリング
@@ -355,3 +421,4 @@ agreement rate が低い（< 30%）場合は、両モデルの観点に大きな
 - Codex 側でも `~/.codex/skills/` のスキルが発火しうる。プロンプトに「7 観点を網羅してほしい」と明示することで暴走を抑える
 - 大きな差分（> 1000 行）では Codex が timeout しがち。タイムアウトを許容しつつループは継続する
 - `kouunryuusui` QG-3 からの呼び出しでも本スキルは使える（PR なしモードで動作）
+- **自分PR (IS_OWN_PR=true) の修正ジャーナル**: Phase 8 で適用した各修正を `fixes[]` として state に積み、各エントリに `confidence` (CONFIRMED / CLAUDE_ONLY / CODEX_VALID) を付ける。Phase 10 で「何を検知して、どんな意図でどう修正したか」を confidence ラベル付きで出力する。`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正対象外のため `fixes[]` に積まない
