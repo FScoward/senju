@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "review-loop-duo finding output",
+  "description": "JSON Schema for a single reviewer's structured output. Both Claude side and Codex side emit this format. OpenAI strict mode compliant.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["perspective", "model", "iteration", "findings", "summary"],
+  "properties": {
+    "perspective": {
+      "type": "string",
+      "enum": [
+        "coding-rules",
+        "architecture",
+        "security",
+        "silent-failure",
+        "requirements",
+        "test-adequacy",
+        "performance",
+        "semantic-consistency"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "description": "Model identifier (e.g. claude-sonnet-4-6, gpt-5, codex-cli-default)"
+    },
+    "iteration": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "severity",
+          "path",
+          "line",
+          "side",
+          "category",
+          "summary",
+          "body",
+          "before",
+          "after",
+          "rule_ref"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Locally unique id within this output (e.g. CR-1, SE-3)"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["Critical", "Warning", "Minor", "Info"]
+          },
+          "path": {
+            "type": "string",
+            "description": "Repository-relative file path"
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "description": "Line number. null when no specific line (file-level finding)"
+          },
+          "side": {
+            "type": "string",
+            "enum": ["RIGHT", "LEFT"]
+          },
+          "category": {
+            "type": "string",
+            "description": "Short slug for dedup (e.g. tenant-isolation, n-plus-one, empty-catch)"
+          },
+          "summary": {
+            "type": "string",
+            "description": "One-line summary in Japanese"
+          },
+          "body": {
+            "type": "string",
+            "description": "Full finding body in Japanese markdown"
+          },
+          "before": {
+            "type": ["string", "null"],
+            "description": "Before code snippet (no fence)"
+          },
+          "after": {
+            "type": ["string", "null"],
+            "description": "After code snippet (no fence)"
+          },
+          "rule_ref": {
+            "type": ["string", "null"],
+            "description": "Reference to a coding rule doc, e.g. docs/coding-rules/backend/security.md#L45"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["critical", "warning", "minor", "info"],
+      "properties": {
+        "critical": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "integer", "minimum": 0 },
+        "minor": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

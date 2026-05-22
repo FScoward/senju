@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop-duo
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 7c72cf12dfd4eb1c4d7dcacd4ad2fadd94fd0e08
+    github-tree-sha: 32df3380a8196b519a81810843f707edb088a37d
 name: review-loop-duo
 ---
 # review-loop-duo
@@ -54,6 +54,9 @@ name: review-loop-duo
   │    - (path, line, category) で正規化して重複判定
   │    - 両方が拾った指摘 = 信頼度昇格（CONFIRMED）
   │    - 片方だけ = 精査ラベル付き（CLAUDE_ONLY / CODEX_ONLY）
+  │    - 【v2】6-3.5: 観点内 LLM consolidate（同根論点を 1 件に統合）
+  │
+  ├─ Phase 6.6【v2 新設】: diff-runs（前回 run との new/carryover/fixed 判定）
   │
   ├─ Phase 7: インラインコメント投稿（PR ありモード、review-loop と同じ）
   │    ※ コメント body の冒頭に [CONFIRMED] / [Claude-only] / [Codex-only] を表示
@@ -105,6 +108,11 @@ codex login status 2>/dev/null || echo "NOT_LOGGED_IN"
 `review-loop` の Phase 4 と同じ。1 メッセージで 8 つの Agent を `run_in_background: true` で起動する。
 各レビュアーのモデル選択ルール（haiku / sonnet）、出力フォーマット（`FINDINGS: XC YW ZM VI`、`INLINE_COMMENTS_JSON:` ブロック）も同じ。
 
+**v2 追加**: 各 Agent は **構造化 JSON 出力** も併存させる必要がある (Phase 6 の機械的集約と Phase 6-3.5 consolidate のため)。
+プロンプト末尾に追加する具体的な指示と JSON schema は [`references/finding-output-format.md`](references/finding-output-format.md) を参照すること。
+schema 本体は [`references/schemas/finding.schema.json`](references/schemas/finding.schema.json)。
+後方互換のため `FINDINGS:` 行と `INLINE_COMMENTS_JSON:` ブロックは引き続き出力する。
+
 ---
 
 ## Phase 4-B: Codex 独立レビュー（同じターンで起動）
@@ -112,61 +120,58 @@ codex login status 2>/dev/null || echo "NOT_LOGGED_IN"
 **Phase 4-A の 7 Agent と同じターン** で Codex を 1 本起動する。Bash の `run_in_background: true` でバックグラウンド実行し、
 Phase 4-A の完了待ちと並行させる。
 
-### コマンド
+**v2 改修**: `codex review` / `codex exec` の使い分けを廃止し **`codex exec` 単一**で PR あり / なし両モードを統一。
+`--output-schema` で JSON schema 出力を強制する。具体的なコマンドライン、オプション解説、`CODEX_MODEL` の罠 (ChatGPT account で `-m gpt-5` を指定すると `400 invalid_request_error`)、エラーハンドリングは [`references/codex-invocation.md`](references/codex-invocation.md) を参照。
+schema 本体は [`references/schemas/finding.schema.json`](references/schemas/finding.schema.json)、Codex プロンプトの観点詳細・出力規約は [`references/finding-output-format.md`](references/finding-output-format.md)。
 
-PR ありモードの場合は `codex review` を使うと差分レビューに最適化される:
+### 観点プロンプト本体 (Codex 側)
 
-```bash
-codex review --base "${BASE_REF}" --color never \
-  "観点：以下の 8 観点を網羅して、各指摘に Severity (Critical/Warning/Minor/Info) と path:line を付けてほしい。
+Codex プロンプトは Claude 側 reviewer-prompts.md の 8 観点要点を 1 本にまとめた以下を使う。`MUST_RECHECK_TOPICS` と差分は呼び出し時に埋め込む:
 
-  1. コーディング規約（命名・複雑度・DRY・マジックナンバー）
-  2. アーキテクチャ（レイヤー依存・責務分離・副作用局所化）
-  3. セキュリティ（OWASP Top 10・認可・テナント分離・入力検証）
-  4. サイレント障害（空 catch・戻り値無視・暗黙フォールバック・switch 網羅漏れ）
-  5. 要件充足度（チケット ${TICKET_ID} の AC との照合。AC 不明なら省略）
-  6. テスト妥当性（AC 未カバー・期待結果の曖昧さ・エッジケース不足）
-  7. パフォーマンス（N+1・不要 SELECT・バッチ未使用・キャッシュ未活用・全件取得）
-  8. 意味論的整合性（コメント／KDoc 宣言と実装の乖離・snapshot/audit/history 系の既存類似実装との横並び不整合・同一 INSERT/UPDATE 内での複合スナップショットフィールドの時系列不整合。発動条件未充足の観点はスキップしてよい）
+````
+あなたはレビュアーです。以下の差分を 8 観点で網羅レビューしてください。
 
-  出力フォーマット（厳守）:
-  - 各指摘を 1 行で: '[Severity] path:line - 要約'
-  - 必要なら直後に Before/After のコードブロック
-  - 最終行に 'FINDINGS: XC YW ZM VI' のサマリーを必ず出力
+観点:
+1. coding-rules - 命名・複雑度・DRY・マジックナンバー
+2. architecture - レイヤー依存・責務分離・副作用局所化
+3. security - OWASP Top 10・認可・テナント分離・入力検証
+4. silent-failure - 空 catch・戻り値無視・暗黙フォールバック・switch 網羅漏れ
+5. requirements - チケット ${TICKET_ID} の AC との照合 (AC 不明なら省略)
+6. test-adequacy - AC 未カバー・期待結果の曖昧さ・エッジケース不足
+7. performance - N+1・不要 SELECT・バッチ未使用・キャッシュ未活用・全件取得
+8. semantic-consistency - コメント/KDoc 宣言と実装の乖離・snapshot/audit/history 系の既存類似実装との横並び不整合・同一 INSERT/UPDATE 内での複合スナップショットフィールドの時系列不整合 (発動条件未充足ならスキップ可)
 
-  MUST_RECHECK_TOPICS（review-loop の Phase 2/3 で収集された強制再確認カテゴリ）:
-  ${MUST_RECHECK_TOPICS_SUMMARY}
-  " \
-  > /tmp/codex-review-iter${N}.txt 2>&1 &
-CODEX_PID=$!
-```
-
-PR なしモードの場合は `codex exec` で stdin から差分を流す:
-
-```bash
-cat <<EOF | codex exec --sandbox read-only --color never \
-  --output-last-message /tmp/codex-review-iter${N}.txt - &
-あなたはレビュアーです。以下のローカル差分を 8 観点（coding-rules / architecture / security /
-silent-failure / requirements / test-adequacy / performance / semantic-consistency）でレビューしてください。
-semantic-consistency はコメント宣言と実装の乖離・snapshot/audit/history 系の既存実装との横並び不整合・
-同一 INSERT/UPDATE 内での複合スナップショットフィールドの時系列不整合を検出する観点。発動条件未充足ならスキップ可。
-
-出力フォーマット（厳守）:
-- 各指摘を 1 行で: '[Severity] path:line - 要約'
-- 最終行に 'FINDINGS: XC YW ZM VI'
-
-MUST_RECHECK_TOPICS:
+MUST_RECHECK_TOPICS (Phase 2/3 で収集された強制再確認カテゴリ):
 ${MUST_RECHECK_TOPICS_SUMMARY}
 
 差分:
-$(eval "$DIFF_CMD")
-EOF
-CODEX_PID=$!
+${DIFF_CONTENT}
+
+出力フォーマット:
+- JSON Schema (perspective / model / iteration / findings[] / summary) に従って response を返す
+- findings[].id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
+- findings[].model は "codex-cli-default" 固定 (CODEX_MODEL が設定されていればその値)
+- summary の数値は findings 配列を集計した結果と一致させること
+- category は finding-output-format.md の語彙を優先利用 (tenant-isolation / n-plus-one / empty-catch ...)
+- 発動条件未充足の観点は findings に含めない
+````
+
+### 起動コマンド
+
+詳細は [`codex-invocation.md`](references/codex-invocation.md) に分離。要点だけ抜粋:
+
+```bash
+codex exec \
+  -C "$PWD" \
+  --skip-git-repo-check \
+  -s read-only \
+  --color never \
+  --output-schema "$SKILL_DIR/references/schemas/finding.schema.json" \
+  --output-last-message "$LOG_DIR/codex-iter${N}.json" \
+  "$PROMPT"
 ```
 
-- `--sandbox read-only`：Codex 側からファイル書き込みさせない
-- `--color never`：ANSI を混ぜない（パースが楽）
-- `run_in_background: true` 相当でバックグラウンド化（Bash ツールの引数で指定）
+⚠️ `CODEX_MODEL` は **未設定推奨** (ChatGPT account では `-m gpt-5` 指定で 400 エラー)。設定済みなら `-m "$CODEX_MODEL"` を追加。
 
 ### 待ち合わせ
 
@@ -245,6 +250,26 @@ Codex の指摘は hallucination リスクがあるので、修正適用前に C
 - `CLAUDE_ONLY` の semantic-consistency 指摘も同じく重大度を維持
 - Phase 6-5 のループ判定でも片側検出の semantic-consistency Critical/Warning を残指摘として正規にカウントする
 
+### 6-3.5. 観点内 LLM consolidate（v2 新設）
+
+機械 dedup (6-2) と CODEX 精査 (6-3 / 6-3a) を経た findings に対し、**観点内で同根論点を 1 件に統合**する LLM consolidate を実行する。
+`parallel-review-codex` の Phase 3.5 を duo に移植したもので、別 file 同パターン違反や同 file 別 line の重複指摘をノイズとして圧縮する。
+
+実行条件・Task agent プロンプト・出力フォーマット・失敗時挙動の詳細は [`references/consolidate-protocol.md`](references/consolidate-protocol.md) を参照。
+
+要点だけ抜粋:
+
+- 観点ごとに 1 つの Task agent を `run_in_background: true` で起動 (最大 8 並列、`model: sonnet`)
+- 機械 dedup を通過したが「別問題」と判断したものは絶対に統合しない
+- 統合後 severity は元 findings の最高値に昇格 (`severity_promoted: true` を立てる)
+- CONFIRMED finding (両 backend 検出) は単独でも統合せず保持
+- 件数の上限による絞り込みは禁止 (独立論点は全て保持)
+- 観点跨ぎ統合は禁止
+
+結果は `state.iterations[N].consolidatedFindings` に書き出し、6-4 以降の集計はこの結果を使う。
+小規模 PR (findings 5 件未満) や Critical/Warning がない iteration ではこの Phase をスキップする。
+`state.iterations[N].consolidate.status` に `success` / `partial` / `skipped` / `failed` を記録する。
+
 ### 6-4. 集計
 
 ```
@@ -265,6 +290,42 @@ Agreement Rate: CONFIRMED / (CONFIRMED + CLAUDE_ONLY + CODEX_VALID) = NN%
 
 - `CONFIRMED Critical/Warning > 0` の場合、ユーザー確認をスキップして必ず継続する（両モデル合意した指摘は信頼度が高いため）
 - `CODEX_ONLY` のみで Critical 件数が水増しされている場合に注意。集計表示時は CONFIRMED / CLAUDE_ONLY / CODEX_VALID の内訳を必ず出す
+
+---
+
+## Phase 6.6: diff-runs（v2 新設）
+
+duo を **同じ PR / ブランチで複数回 run** したとき、前回 run の最終 `consolidatedFindings` と今回を比較して `new` / `carryover` / `fixed` を判定する。
+ループ自動修正で「直したはずなのに再発した」や「何度回しても消えない指摘 (= 手動対応必要)」を即座に検知するために使う。
+`parallel-review-codex` の Phase 3.7 を duo に移植したもの。
+
+詳細手順 (state 配置 / マッチング key / カテゴリ分類 / ループ判定への影響 / 失敗時挙動) は [`references/run-diff-protocol.md`](references/run-diff-protocol.md) を参照。
+
+### 実行条件と要点
+
+- iteration が完了した直後 (6-4 集計後、Phase 7 投稿前) に実行
+- 同じ PR 番号 OR 同じブランチで過去 run state (`.omc/review-loop-duo/runs/`) が存在する場合のみ
+- 初回 run やファイル欠落時は `state.iterations[N].diffRuns = null` を記録してスキップ (ループは止めない)
+
+### マッチング key
+
+```
+key = (path, category, line_bucket)
+line_bucket = floor(line / 10)  # ±10 行のゆらぎ許容
+```
+
+`all_locations` が複数ある consolidated finding は locations のいずれかが一致すれば match 扱い。
+
+### ループ判定への追加ルール
+
+| 条件 | アクション |
+|---|---|
+| Critical/Warning 全件が `carryover_count >= 3` | 🔚 **収束** → Phase 10 (手動対応サマリー) |
+| `new` カテゴリに Critical/Warning が含まれる | ⚠️ **副作用警告** → 修正は続行するが Phase 10 で前回 fix との関係を必ず報告 |
+| `fixed` 件数 > 0 | ✅ 進捗あり → 通常通り次 iteration へ |
+
+state スナップショットは各 iteration 終了時に `.omc/review-loop-duo/runs/YYYY-MM-DD-HHMM-pr{N}-iter{M}.json` に書き出す。
+PR なしモードでは `pr{N}` を `branch-{slug}` に置換。
 
 ---
 
@@ -365,6 +426,49 @@ Codex タイムアウト: ${CODEX_TIMEOUT_COUNT} 回
 
 agreement rate が低い（< 30%）場合は、両モデルの観点に大きな差があることを意味する。
 報告に「Claude と Codex で観点ズレが大きい。指摘の独立性が高く、見逃しリスクが低かった可能性」と添えると有用。
+
+### v2 追加セクション: consolidate 統計
+
+`state.iterations[N].consolidate.status` が `success` / `partial` だった iteration について、観点ごとに以下を追加表示する:
+
+```
+## 📦 観点内 consolidate 統計
+
+| 観点 | Pre-consolidate | Post-consolidate | 圧縮率 | severity 昇格 |
+|---|---:|---:|---:|---:|
+| coding-rules | 12 | 7 | 42% | 2 件 |
+| security | 5 | 3 | 40% | 1 件 |
+| ...
+
+合計: 71 → 48 件 (32% 圧縮)
+```
+
+`partial` の場合は失敗観点を脚注で示し、`skipped` の iteration は表から除外する。
+
+### v2 追加セクション: diff-runs サマリ
+
+`state.iterations[N].diffRuns` が記録された iteration について以下を追加:
+
+```
+## 🔁 連続 run の差分 (diff-runs)
+
+前回 run: runs/2026-05-22-1620-pr3122-iter2.json
+
+| 分類 | 件数 |
+|---|---:|
+| 🆕 new (今回新規) | 2 |
+| ♻️ carryover (継続) | 3 |
+| ✅ fixed (解消) | 5 |
+
+### 🆕 今回新規発生した Critical/Warning
+- [Critical] src/foo/Cache.kt:88 (PF-2) - キャッシュ初期化漏れ
+  → 前回 fix した SE-1 の副作用の可能性あり
+
+### ♻️ 3 run 連続で carryover している指摘 (手動対応推奨)
+- [Warning] src/foo/Util.kt:17 (SF-1) - 空 catch  (carryover_count=3)
+```
+
+初回 run やスキップ iteration では本セクションを出さない。
 
 ### 修正ジャーナル（自分PR・duo 版）
 
