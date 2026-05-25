@@ -14,12 +14,16 @@ codex exec \
   --color never \
   --output-schema "$SKILL_DIR/references/schemas/finding.schema.json" \
   --output-last-message "$OUTPUT_DIR/codex-iter${N}.json" \
-  "$PROMPT"
+  "$PROMPT" < /dev/null
 ```
+
+> ⚠️ **`< /dev/null` は必須**。`codex exec` はプロンプトを引数で渡しても stdin に追加入力があると判断すると `Reading additional input from stdin...` で待機に入る。バックグラウンド実行（Bash `run_in_background: true`）では stdin が EOF にならず**ハングしたままタイムアウト kill（exit 144 = SIGTERM）**される。`< /dev/null` で stdin を即 EOF にすればこの待機を回避できる。
 
 ### バックグラウンド起動 (Phase 4-A の Claude 並列起動と同じターンで実行)
 
 Bash ツールの `run_in_background: true` で起動する。Claude 側 7 Agent と Codex 側 1 (将来 7) プロセスが同時に走る。
+
+**必ず `< /dev/null` を付ける**（上記「推奨呼び出しパターン」参照）。付け忘れると stdin 待ちでハングし、120 秒（Bash background のデフォルト timeout）で SIGTERM kill されて `--output-last-message` が生成されない。あわせて Bash ツール側の `timeout` も 300000ms 程度に明示しておくと、レビュー完了前の早期 kill を防げる。
 
 ## オプション解説
 
@@ -82,6 +86,7 @@ PR ありモードでは事前に `gh pr diff` で差分を取得し、プロン
 
 | 症状 | 対処 |
 |---|---|
+| `Reading additional input from stdin...` でハング / exit 144 (SIGTERM) / `--output-last-message` 未生成 | stdin 待ち。`"$PROMPT" < /dev/null` で stdin を即 EOF にして再実行。Bash background の `timeout` も 300000ms に明示 |
 | `codex: command not found` | `codex_enabled=false` に落として Claude 単独 (review-loop 相当) で続行 |
 | `codex login required` | 同上。ユーザーに `codex login` を案内 |
 | `--output-last-message` のファイルが空 | 出力欠落。1 度だけリトライ。再度失敗で当該 iteration の Codex 結果は破棄 (CLAUDE_ONLY 扱い) |
