@@ -528,6 +528,7 @@ agreement rate が低い（< 30%）場合は、両モデルの観点に大きな
 - `--sandbox workspace-write` で Codex を起動する（read-only で十分）
 - Codex を直列で呼ぶ（Phase 4-A と同じターンでバックグラウンド起動すること。直列だと所要時間が倍になる）
 - 「CONFIRMED 0 件だから完了」と判断する（CLAUDE_ONLY / CODEX_VALID の Critical/Warning が残っていればループ継続）
+- レビュアー（Claude Agent / Codex）に base ブランチを示さず、作業ツリー（main 相当）のコードでレビューさせる。**スタックドPR（base が main でない）では base の API が main と異なりうる**ため、「import が通らない」「シグネチャ不一致」「メソッド/カラムが存在しない」系の指摘は、複数モデルが一致（CONFIRMED）していても全員が同じ main を見た共倒れの偽陽性になりうる。Phase 1 で確定した `BASE` を Phase 4-A / 4-B のプロンプトに明示し、これら「存在しない/動かない」系を Critical で投稿する前に Phase 6-3 で `git fetch origin <base>`（`2>/dev/null` 厳禁＝fetch失敗を検知）→ `git show origin/<base>:<path>` で base の実体を裏取りすること（出典: PR #3553 / APP-1856）
 
 ---
 
