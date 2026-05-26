@@ -7,7 +7,7 @@ metadata:
     github-path: skills/kouunryuusui
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 2083cbc31b33375a0180a2c6490be190f2f96995
+    github-tree-sha: 39a19a59b6e3668338a04c035bae536854e71676
 name: kouunryuusui
 ---
 # 行雲流水（kouunryuusui） $ARGUMENTS
@@ -50,6 +50,7 @@ PRを小さく保つための道具として本フローに統合する。
 | `mihari` | テスト充足性を3並列レビュー×収束ループで検証 | QG-3 Stage1 パートB（テスト充足性ループ）|
 | `simplify` | 変更コードを reuse / quality / efficiency 観点でレビュー＆自動修正 | QG-2（コード品質改善）|
 | `review-loop` | 6観点並列レビュー × 指摘ゼロまで自動修正ループ（PR なしモード対応） | QG-3 Stage2（コード品質チェック）|
+| `code-why` | 実装中の行/関数レベルの判断根拠（WHY）を記録し説明責任を担保（中レベル→コミットの `Why:` 欄／大レベル→DR に一本化） | T3（実装中）|
 
 ## アーキテクチャ概要
 
