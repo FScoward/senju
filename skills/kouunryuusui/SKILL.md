@@ -22,6 +22,7 @@ Epic/USチケットを起点に、**設計→チケット分割→実装→PR作
 |-------|------|------------|
 | `software-requirements` | 対話形式での要求整理 | E1前（任意） |
 | `sier-dev` | 要件定義書〜内部設計書の生成 | E1（仕様書なし時） |
+| `refine-ticket` | チケットの description/AC を GWT+Examples・7項目品質基準まで磨く | E1・T0 |
 | `managing-database-migrations` | DBマイグレーションファイル作成 | T1 |
 
 ## 関連スキル（チケット情報収集）
