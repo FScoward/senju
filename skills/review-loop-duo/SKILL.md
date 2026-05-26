@@ -42,6 +42,7 @@ name: review-loop-duo
   │
   ├─ Phase 2: External Signals Gate（PR ありモードのみ、review-loop と同じ）
   ├─ Phase 3: Database Migration Gate（migration 差分時のみ、review-loop と同じ）
+  ├─ Phase 3.5: lossy fallback precheck（fallback + side effect 兆候を MUST_RECHECK_TOPICS に追加）
   │
   ├─ Phase 4-A: Claude 8 観点並列レビュー（run_in_background: true × 8）
   ├─ Phase 4-B: Codex 独立レビュー（codex exec --json をバックグラウンド実行）
@@ -101,6 +102,35 @@ codex login status 2>/dev/null || echo "NOT_LOGGED_IN"
 
 `review-loop` と完全に同じ。`MUST_RECHECK_TOPICS` を作って Phase 4-A / 4-B の両方に渡す。
 
+### Phase 3.5: lossy fallback precheck
+
+Phase 2 / 3 の後、または遅くとも Phase 4 の前に、差分内の fallback と副作用の近接を機械的に確認する。
+これは個別の `operator snapshot` や audit log 専用ルールではなく、「区別すべき異常状態をデフォルト値に潰したまま不可逆な副作用へ進む」パターンを拾うための precheck である。
+
+以下の兆候が同じ hunk または近傍（目安 ±20 行）にある場合は、`MUST_RECHECK_TOPICS` に `lossy-fallback-before-side-effect` を追加する:
+
+- `?: ""`
+- `?: false`
+- `?: 0`
+- `?: emptyList()`
+- `?: run { logger.warn`
+- `catch` + `logger.warn` + `null`
+- `logger.warn` の後に処理継続
+- nullable access `?.foo ?:`
+- `insert`, `update`, `save`, `create`, `publish`, `send`, `notify`, `enqueue` の近傍に fallback がある
+
+追加する `MUST_RECHECK_TOPICS` の例:
+
+```yaml
+- category: lossy-fallback-before-side-effect
+  summary: fallback で欠落・解決失敗をデフォルト値に潰した後、DB 書き込み・履歴作成・通知・外部 API 呼び出しなどの副作用へ進んでいないか確認する
+  required_followups:
+    - 複数の異常状態が同じデフォルト値に畳み込まれていないか
+    - logger.warn だけで失敗が呼び出し側へ伝播しないまま継続していないか
+    - 保存後の値から「本当の値」か「解決失敗」か区別できるか
+    - テストが fallback を正常系として固定していないか
+```
+
 ---
 
 ## Phase 4-A: Claude 側 8 観点並列レビュー
@@ -112,6 +142,8 @@ codex login status 2>/dev/null || echo "NOT_LOGGED_IN"
 プロンプト末尾に追加する具体的な指示と JSON schema は [`references/finding-output-format.md`](references/finding-output-format.md) を参照すること。
 schema 本体は [`references/schemas/finding.schema.json`](references/schemas/finding.schema.json)。
 後方互換のため `FINDINGS:` 行と `INLINE_COMMENTS_JSON:` ブロックは引き続き出力する。
+
+**duo 固有追加**: silent-failure Agent には `lossy-fallback-before-side-effect` を明示する。単なる empty catch や ignored return だけでなく、依存データの欠落・解決失敗・権限不一致・時点不一致を空文字、null、false、0、emptyList、UNKNOWN enum、デフォルトオブジェクトなどに潰し、そのまま DB 書き込み・履歴作成・監査ログ・通知・外部 API 呼び出しへ進む処理を Critical / Warning 候補として確認すること。保存後の値だけで「本当の値」と「解決失敗」を区別できないなら、category は既存の `implicit-fallback` より `lossy-fallback-before-side-effect` を優先する。
 
 ---
 
@@ -135,11 +167,22 @@ Codex プロンプトは Claude 側 reviewer-prompts.md の 8 観点要点を 1 
 1. coding-rules - 命名・複雑度・DRY・マジックナンバー
 2. architecture - レイヤー依存・責務分離・副作用局所化
 3. security - OWASP Top 10・認可・テナント分離・入力検証
-4. silent-failure - 空 catch・戻り値無視・暗黙フォールバック・switch 網羅漏れ
+4. silent-failure - 空 catch・戻り値無視・暗黙フォールバック・lossy fallback before side effect・switch 網羅漏れ
 5. requirements - チケット ${TICKET_ID} の AC との照合 (AC 不明なら省略)
 6. test-adequacy - AC 未カバー・期待結果の曖昧さ・エッジケース不足
 7. performance - N+1・不要 SELECT・バッチ未使用・キャッシュ未活用・全件取得
 8. semantic-consistency - コメント/KDoc 宣言と実装の乖離・snapshot/audit/history 系の既存類似実装との横並び不整合・同一 INSERT/UPDATE 内での複合スナップショットフィールドの時系列不整合 (発動条件未充足ならスキップ可)
+
+silent-failure では、単なる empty catch や ignored return だけでなく、依存データの欠落や解決失敗をデフォルト値に潰して、そのまま副作用へ進む処理を重点的に確認すること。
+
+例:
+- nullable result を `?: ""`, `?: false`, `?: emptyList()` で潰した後に DB 書き込みする
+- `logger.warn` だけして処理を継続する
+- 複数の失敗理由を同じ sentinel / default に畳み込む
+- 失敗を Result / exception / sealed type として呼び出し側に返さない
+- テストが fallback を正常系として期待している
+
+副作用後に保存されたデータから「本当の値」と「解決失敗」が区別できない場合は、`lossy-fallback-before-side-effect` として Critical / Warning 候補にする。
 
 MUST_RECHECK_TOPICS (Phase 2/3 で収集された強制再確認カテゴリ):
 ${MUST_RECHECK_TOPICS_SUMMARY}
@@ -152,7 +195,7 @@ ${DIFF_CONTENT}
 - findings[].id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
 - findings[].model は "codex-cli-default" 固定 (CODEX_MODEL が設定されていればその値)
 - summary の数値は findings 配列を集計した結果と一致させること
-- category は finding-output-format.md の語彙を優先利用 (tenant-isolation / n-plus-one / empty-catch ...)
+- category は finding-output-format.md の語彙を優先利用 (tenant-isolation / n-plus-one / empty-catch / lossy-fallback-before-side-effect ...)
 - 発動条件未充足の観点は findings に含めない
 ````
 

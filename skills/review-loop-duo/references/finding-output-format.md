@@ -72,6 +72,8 @@ Codex プロンプトテンプレ要点:
 - JSON Schema (perspective / model / iteration / findings[] / summary) に従って response を組み立てること
 - summary の数値は findings 配列を集計した結果と一致させること
 - 各 finding の id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
+- silent-failure では、依存データの欠落や解決失敗をデフォルト値に潰して、そのまま DB 書き込み・履歴作成・通知・外部 API 呼び出しなどの副作用へ進む `lossy-fallback-before-side-effect` を Critical / Warning 候補として確認すること
+- 保存後の値から「本当の値」と「解決失敗」が区別できない場合は、既存の `implicit-fallback` より `lossy-fallback-before-side-effect` を優先して使うこと
 
 各 finding の `model` は "codex-cli-default" 固定でよい (CODEX_MODEL が設定されていればその値)
 ```
@@ -93,9 +95,40 @@ dedup の精度を上げるため、`category` は以下の slug を優先して
 - セキュリティ系: `tenant-isolation`, `idor`, `xss`, `sql-injection`, `auth-bypass`, `secret-leak`
 - パフォーマンス系: `n-plus-one`, `unused-select`, `missing-index`, `cache-miss`, `full-scan`
 - アーキ系: `layer-violation`, `responsibility-leak`, `side-effect-leak`, `circular-dep`
-- サイレント障害系: `empty-catch`, `ignored-return`, `implicit-fallback`, `enum-exhaustion-miss`
+- サイレント障害系: `empty-catch`, `ignored-return`, `implicit-fallback`, `lossy-fallback-before-side-effect`, `implicit-default-before-write`, `unobservable-fallback`, `failure-collapsed-into-value`, `enum-exhaustion-miss`
 - 規約系: `naming`, `magic-number`, `dry-violation`, `complexity`
 - テスト系: `ac-uncovered`, `vague-assertion`, `edge-case-miss`, `flaky-time`
 - 意味論系: `comment-impl-drift`, `snapshot-time-drift`, `cross-impl-inconsistency`
 
+副作用前の lossy fallback を指摘する場合は、汎用的な `implicit-fallback` よりも `lossy-fallback-before-side-effect` を優先する。補助的に、DB write 直前の暗黙 default は `implicit-default-before-write`、呼び出し側が失敗を観測できない fallback は `unobservable-fallback`、複数の失敗理由が同じ値へ潰れる場合は `failure-collapsed-into-value` を使ってよい。
+
 Codex 側にもプロンプトでこの語彙を例示し、独自 slug を生成しすぎないよう抑える。
+
+## lossy-fallback-before-side-effect 検出フィクスチャ
+
+以下のようなコードは Warning 以上で検出する。個別語彙 `operator snapshot` には依存せず、任意の依存データ解決で同じ構造を拾う。単独で参照できる fixture は [`lossy-fallback-before-side-effect-fixture.md`](lossy-fallback-before-side-effect-fixture.md) に置く。
+
+```kotlin
+val snapshot = snapshotQuery.findBy(...) ?: run {
+    logger.warn("snapshot not found")
+    null
+}
+
+historyRepository.create(
+    History(
+        operatorName = snapshot?.displayName ?: "",
+        externalId = snapshot?.externalId ?: "",
+    )
+)
+```
+
+期待 finding:
+
+```json
+{
+  "severity": "Warning",
+  "category": "lossy-fallback-before-side-effect",
+  "summary": "snapshot 解決失敗が空文字に潰され、履歴 INSERT 後に原因を復元できない",
+  "body": "依存データの解決失敗を `\"\"` に畳み込んだまま historyRepository.create に進むため、保存後の行だけでは本当に空文字だったのか解決失敗だったのか区別できない。fail-closed にして Err / exception で副作用を止めるか、unresolved 状態を明示的な型・カラム・sentinel として保存し、呼び出し側が失敗を観測できる形にする。"
+}
+```

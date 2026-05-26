@@ -126,7 +126,7 @@ Agent(
 
 ## 4. silent-failure レビュアー
 
-**モデル選択**: 常に `model: "haiku"`（空catch・戻り値無視・switch網羅漏れはパターン検出で十分）
+**モデル選択**: 常に `model: "haiku"`（空catch・戻り値無視・switch網羅漏れはパターン検出が主体。lossy fallback before side effect は副作用到達と観測可能性まで確認する）
 
 ```
 Agent(
@@ -147,10 +147,23 @@ Agent(
   - 空catchブロック（例外を握りつぶし）
   - 戻り値の無視（Result型・Optional）
   - 暗黙のフォールバック（エラー時にデフォルト値で続行）
+  - lossy-fallback-before-side-effect: 依存データの欠落・解決失敗・権限不一致・時点不一致を空文字、null、false、0、emptyList、UNKNOWN enum、デフォルトオブジェクトなどに潰し、そのままDB INSERT / UPDATE、履歴作成、監査ログ、通知、外部API呼び出しへ進む処理
   - FailFast回避（空リスト・nullを返して続行）
+  - logger.warn だけで失敗を呼び出し側へ伝播せず、処理を正常系として継続する箇所
   - ログなし例外処理
   - switch/when 文の網羅漏れ
   - 非同期処理のエラー無視
+
+  lossy-fallback-before-side-effect の判定:
+  - 複数の異常状態が同じデフォルト値に畳み込まれていないか
+  - fallback 後に永続化、履歴作成、通知、外部API呼び出しなどの不可逆な副作用が続かないか
+  - 戻り値が Unit / nullable / Boolean などで、失敗原因を呼び出し側が観測できない形になっていないか
+  - 保存後の値だけを見ても「本当の値」か「取得・解決失敗」か区別できない状態になっていないか
+  - テストがその fallback を正常系として固定していないか
+
+  判断基準:
+  - その値を後から見た人が「本当にその値だった」のか「取得・解決に失敗した」のか区別できないなら、silent failure として扱う
+  - 副作用前の lossy fallback は category に `lossy-fallback-before-side-effect` を優先利用する
 
   最終行: FINDINGS: {critical}C {warning}W {minor}M {info}I
   """

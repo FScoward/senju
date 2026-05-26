@@ -68,7 +68,7 @@
           },
           "category": {
             "type": "string",
-            "description": "Short slug for dedup (e.g. tenant-isolation, n-plus-one, empty-catch)"
+            "description": "Short slug for dedup (e.g. tenant-isolation, n-plus-one, empty-catch, lossy-fallback-before-side-effect)"
           },
           "summary": {
             "type": "string",
