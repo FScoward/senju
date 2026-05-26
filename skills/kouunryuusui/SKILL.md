@@ -7,7 +7,7 @@ metadata:
     github-path: skills/kouunryuusui
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 2083cbc31b33375a0180a2c6490be190f2f96995
+    github-tree-sha: 39a19a59b6e3668338a04c035bae536854e71676
 name: kouunryuusui
 ---
 # 行雲流水（kouunryuusui） $ARGUMENTS
@@ -22,6 +22,7 @@ Epic/USチケットを起点に、**設計→チケット分割→実装→PR作
 |-------|------|------------|
 | `software-requirements` | 対話形式での要求整理 | E1前（任意） |
 | `sier-dev` | 要件定義書〜内部設計書の生成 | E1（仕様書なし時） |
+| `refine-ticket` | チケットの description/AC を GWT+Examples・7項目品質基準まで磨く | E1・T0 |
 | `managing-database-migrations` | DBマイグレーションファイル作成 | T1 |
 
 ## 関連スキル（チケット情報収集）
