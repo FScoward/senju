@@ -40,7 +40,9 @@
           "side",
           "category",
           "summary",
-          "body",
+          "why_problem",
+          "impact",
+          "fix",
           "before",
           "after",
           "rule_ref"
@@ -74,9 +76,17 @@
             "type": "string",
             "description": "One-line summary in Japanese"
           },
-          "body": {
+          "why_problem": {
             "type": "string",
-            "description": "Full finding body in Japanese markdown"
+            "description": "なぜ問題なのか（機序）. The MOST IMPORTANT field. Explain WHAT the code does and WHICH invariant/precondition/contract/intent it breaks. Describe the mechanism of the defect, not just its name. Must NOT be the same text as impact."
+          },
+          "impact": {
+            "type": "string",
+            "description": "なぜ修正が必要なのか（帰結）. The concrete harm if left unfixed: who is affected, in what situation, and what is lost (data corruption / leak / outage / wrong behavior / maintenance cost). This justifies the severity. Must NOT restate why_problem."
+          },
+          "fix": {
+            "type": "string",
+            "description": "どう修正すると良いか（方針）. The recommended fix direction in prose. Concrete code goes in before/after."
           },
           "before": {
             "type": ["string", "null"],
