@@ -24,8 +24,10 @@ historyRepository.create(
 - perspective: `silent-failure`
 - category: `lossy-fallback-before-side-effect`
 - summary: snapshot 解決失敗が空文字に潰され、履歴 INSERT 後に原因を復元できない
+- why_problem（なぜ問題か＝機序）: `findBy` が null を返したとき `?: ""` で空文字に潰したまま `create` へ進むため、「解決成功で値が空」と「解決失敗」が同じ空文字に畳み込まれ、保存行から区別できなくなる
+- impact（なぜ修正が必要か＝帰結）: 履歴に原因不明の空文字レコードが残り、解決失敗を後から検知・追跡・再実行できない。監査・障害調査でデータの信頼性が損なわれる
 
-## 推奨修正
+## 推奨修正（fix）
 
 - fail-closed にして `Err` / exception で副作用を止める
 - または unresolved 状態を明示的な型・カラム・sentinel として保存する

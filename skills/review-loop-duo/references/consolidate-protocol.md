@@ -29,7 +29,9 @@ state.iterations[N].mergedFindings (Phase 6-2 完了直後の配列)
   "line": 42,
   "category": "...",
   "summary": "...",
-  "body": "...",
+  "why_problem": "なぜ問題か（機序）...",
+  "impact": "なぜ修正が必要か（帰結）...",
+  "fix": "どう直すか（方針）...",
   "confidence_dedup": "CONFIRMED" | "CLAUDE_ONLY" | "CODEX_VALID"
 }
 ```
@@ -95,7 +97,9 @@ iteration: {{N}}
       "line": 42,
       "category": "tenant-isolation",
       "summary": "...",
-      "body": "...一般化された本文...",
+      "why_problem": "...一般化された機序...",
+      "impact": "...一般化された帰結...",
+      "fix": "...方針...",
       "consolidated_from": ["CR-1", "CDX-2"],
       "all_locations": [
         { "path": "src/foo/Bar.kt", "line": 42 },
@@ -111,7 +115,7 @@ iteration: {{N}}
 
 備考:
 - 統合せずそのまま残った finding も `consolidated_from: ["<元id>"]`、`all_locations: [元 path/line]` で出力すること
-- `body` は統合された場合のみ一般化、単独残しなら元のまま
+- `why_problem` / `impact` / `fix` は統合された場合のみ一般化、単独残しなら元のまま。統合時も 3 フィールドの分離（機序 / 帰結 / 方針）は維持し、1 つに混ぜないこと
 ````
 
 ## merge 後の処理
