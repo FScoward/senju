@@ -199,12 +199,14 @@ why_problem と impact は別物。why_problem=「コードが X をして不変
 
 出力フォーマット:
 - JSON Schema (perspective / model / iteration / findings[] / summary) に従って response を返す
+- **トップレベルの `perspective` は `"multi"` 固定** (本プロンプトは 8 観点を 1 レスポンスで返すため。単一観点に絞った出力にしない)
+- **`findings[]` の各要素には `perspective` フィールドを必ず付ける**。値は 8 観点 (coding-rules / architecture / security / silent-failure / requirements / test-adequacy / performance / semantic-consistency) のいずれか。これにより 1 レスポンスで複数観点の指摘を保持する
 - 各 finding は why_problem / impact / fix を必ず埋める (空・薄い why_problem は不採用扱いになりうる)
 - findings[].id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
 - findings[].model は "codex-cli-default" 固定 (CODEX_MODEL が設定されていればその値)
 - summary の数値は findings 配列を集計した結果と一致させること
 - category は finding-output-format.md の語彙を優先利用 (tenant-isolation / n-plus-one / empty-catch / lossy-fallback-before-side-effect ...)
-- 発動条件未充足の観点は findings に含めない
+- 発動条件未充足の観点は findings に含めない (該当 finding を出さなければ自然に省略される。トップレベル `perspective` は `"multi"` のまま固定)
 ````
 
 ### 起動コマンド

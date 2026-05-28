@@ -8,6 +8,7 @@
   "properties": {
     "perspective": {
       "type": "string",
+      "description": "Top-level perspective tag. Per-Agent invocations (Claude side) set the single perspective they covered. Unified multi-perspective invocations (Codex side) set 'multi' and rely on per-finding `perspective` to identify each finding's category.",
       "enum": [
         "coding-rules",
         "architecture",
@@ -16,7 +17,8 @@
         "requirements",
         "test-adequacy",
         "performance",
-        "semantic-consistency"
+        "semantic-consistency",
+        "multi"
       ]
     },
     "model": {
@@ -34,6 +36,7 @@
         "additionalProperties": false,
         "required": [
           "id",
+          "perspective",
           "severity",
           "path",
           "line",
@@ -51,6 +54,20 @@
           "id": {
             "type": "string",
             "description": "Locally unique id within this output (e.g. CR-1, SE-3)"
+          },
+          "perspective": {
+            "type": "string",
+            "description": "Per-finding perspective tag. REQUIRED so multi-perspective invocations (top-level perspective='multi') can carry findings from all 8 perspectives in a single response. Single-perspective invocations should set this to match the top-level perspective.",
+            "enum": [
+              "coding-rules",
+              "architecture",
+              "security",
+              "silent-failure",
+              "requirements",
+              "test-adequacy",
+              "performance",
+              "semantic-consistency"
+            ]
           },
           "severity": {
             "type": "string",
