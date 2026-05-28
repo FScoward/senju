@@ -73,6 +73,7 @@ Claude 側 7 Agent と Codex 側 1 プロセスは、両方とも `references/sc
   "findings": [
     {
       "id": "CR-1",
+      "perspective": "<観点 id>",
       "severity": "Critical",
       "path": "src/foo/Bar.kt",
       "line": 42,
@@ -100,6 +101,7 @@ FINDINGS: 1C 0W 0M 0I
 備考:
 - **`why_problem` / `impact` / `fix` の 3 フィールドは必須**。1 つの自由記述 `body` に混ぜず、必ず分けて埋める（詳細は後述の「指摘の 3 分解」）
 - **`why_problem`（なぜ問題か）が最重要**。ここが空・薄い・`summary` の言い換えだけ、の指摘は不採用扱いになりうる
+- **トップレベル `perspective` と各 `findings[].perspective` の両方が必須**。Claude 側の単一観点 Agent はトップレベルと finding 側の `perspective` を同じ値で揃える。Codex 側の 8 観点統合呼び出しはトップレベルを `"multi"`、各 finding には実際の観点 (coding-rules / security / ...) を入れる
 - Before/After のコード片は `before` / `after` フィールドに分けて入れる
 - `line` が特定できない file 全体への指摘は `line: null` でよい
 - `rule_ref` は対応する coding rule doc がない場合 `null`
@@ -117,6 +119,8 @@ Codex プロンプトテンプレ要点:
 出力フォーマット (厳守):
 - レビュー本文と最終行 `FINDINGS: XC YW ZM VI` は出さなくてよい (Codex の output は --output-schema で構造化される)
 - JSON Schema (perspective / model / iteration / findings[] / summary) に従って response を組み立てること
+- **トップレベルの `perspective` は `"multi"` 固定** (Codex は 1 レスポンスで 8 観点を統合返却するため。単一観点に縛らない)
+- **`findings[]` の各要素には `perspective` フィールドを必ず付ける** (8 観点 enum のいずれか)。これにより 1 レスポンス内で観点ごとの指摘を保持し、Phase 6 の集約・dedup・consolidate が正しく走る
 - summary の数値は findings 配列を集計した結果と一致させること
 - 各 finding の id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
 - silent-failure では、依存データの欠落や解決失敗をデフォルト値に潰して、そのまま DB 書き込み・履歴作成・通知・外部 API 呼び出しなどの副作用へ進む `lossy-fallback-before-side-effect` を Critical / Warning 候補として確認すること
