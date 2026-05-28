@@ -16,10 +16,12 @@ gh skill install FScoward/senju kouunryuusui
 # Epic/USチケット → 上位フロー（設計→分割→実装ループ）
 /kouunryuusui EPIC-123
 /kurs "ユーザー認証機能を追加したい"
+$kouunryuusui EPIC-123
 
 # 実装チケット → 下位フロー（直接実装）
 /kouunryuusui TASK-789
 /kurs https://github.com/your-org/your-repo/issues/42
+kouunryusui TASK-789
 ```
 
 `$ARGUMENTS` にはチケットID・URL・または作業内容テキストを渡します。
@@ -37,7 +39,7 @@ kouunryuusui
 │   ├─ E1: AC品質チェック & 仕様把握
 │   ├─ E2: アーキテクチャ設計（DB/API/UI/設計図）
 │   ├─ E3: チケット分割 & 依存グラフ生成
-│   └─ E4: チケット実行ループ（Native Team 並列実行）
+│   └─ E4: チケット実行ループ（Team / file-handoff 並列実行）
 │
 └─ 下位フロー (Ticket Level): T0〜T5
     ├─ T0: AC品質チェック（必須）
@@ -56,8 +58,10 @@ kouunryuusui
 
 ## 動作要件
 
-- [Claude Code](https://claude.ai/code) CLI
-- Claude Code Native Teams（E4 並列実行に使用）
+- Claude Code または Codex
+- Claude Code Native Teams がある場合は E4 並列実行に使用
+- Codex で Native Team 相当が無い場合は `.claude/tmp/team/` と `.claude/tmp/handoffs/` の file-handoff で同じ契約を満たす
+- `.claude/tmp` は互換 artifact namespace。Codex 実行時も既存 hook / report との互換のため同じパスを使う
 
 ## ライセンス
 
