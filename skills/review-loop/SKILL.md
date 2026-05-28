@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 114fea6209809268e208aa7938f9ef7883151d04
+    github-tree-sha: 9d9a5fe03b1347f3993b2b4a48a3df3caf03d183
 name: review-loop
 ---
 # review-loop
@@ -77,6 +77,7 @@ if [ "$HAS_PR" = "true" ]; then
   PR_BODY=$(gh pr view $PR_NUMBER --json body -q '.body' 2>/dev/null || echo "")
 else
   # PR なしモード: ベースブランチを検出してローカル diff を使う
+  # 3 ドット形式 (...) で merge-base 起点の diff を取得する
   BASE=$(cat .claude/tmp/base-branch.txt 2>/dev/null \
     || git rev-parse --abbrev-ref @{upstream} 2>/dev/null \
     || echo "origin/main")
@@ -85,6 +86,22 @@ else
   PR_BODY=$(cat sprint-contract.md 2>/dev/null || cat scratch.md 2>/dev/null || echo "")
 fi
 ```
+
+### PR 差分入力の確定（MUST、PR #3600 教訓）
+
+> ⚠️ `git diff origin/main..<PR-branch>`（2 ドット）を素朴に使うとローカル `origin/main` が古い場合に「別 PR 由来の merge コミット差分」が PR の変更として diff に混入する。レビュアーがこれを「PR の変更」と誤認すると、別 PR で既に main にマージ済みのコードに対して指摘を量産する。`review-loop-duo` で発生したインシデントの再発防止策をここにも反映する。
+
+`HAS_PR=true` の場合は **必ず** GitHub API で変更ファイル一覧を別途取得し、`pr_changed_files[]` として state に保存する:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/files --paginate \
+  -q '.[].filename' | sort -u > /tmp/pr-changed-files.txt
+```
+
+`HAS_PR=false`（PR なしモード）では `git diff ${BASE}...HEAD --name-only | sort -u` を `pr_changed_files[]` に保存する。
+
+**禁止**: `git diff origin/main..<PR-branch>`（2 ドット形式）の素朴な使用。`gh pr diff` または 3 ドット形式（`...HEAD`）を使うこと。
+**禁止**: `git fetch origin main 2>/dev/null` で fetch 失敗を握り潰すこと。
 
 ### diffサイズ判定（モデル選択に使用）
 
@@ -149,6 +166,7 @@ fi
   "has_pr": true,
   "base": "origin/main",
   "diff_cmd": "gh pr diff 123",
+  "pr_changed_files": [],
   "ticket_id": "",
   "is_own_pr": true,
   "must_recheck_topics": [],
@@ -160,6 +178,8 @@ fi
   "status": "running"
 }
 ```
+
+`pr_changed_files[]` は Phase 1 の「PR 差分入力の確定」セクションで確定させたファイル一覧。Phase 4 / Phase 6 の scope guard と scope filter で参照される。
 
 各 `iterations[]` 要素は Phase 8 で以下のフィールドを持つ（`IS_OWN_PR=true` のみ `fixes` を埋める）:
 
@@ -227,6 +247,7 @@ AI レビューを始める前に、GitHub 上の既存シグナル（`statusChe
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
   - PR ありモード: `gh pr diff {PR_NUMBER}`
   - PR なしモード: `git diff {BASE}...HEAD`
+- **scope guard（MUST）**: レビュー対象は Phase 1 で確定した `{PR_CHANGED_FILES}` リストに含まれるファイルのみ。これ以外のファイルへの指摘は、たとえ差分本文に出てきても出さないこと（差分本文には merge コミット由来のノイズが混じる可能性があるため。list に無いファイルへの指摘は「入力が壊れている」サインとして破棄する）
 - Phase 2 / 3 で作った `{MUST_RECHECK_TOPICS}` を必ず再確認すること
   - 既存 review thread と同じ指摘を重複投稿するだけで終わらず、同カテゴリの横展開を確認すること
   - 例: Flyway collision が出たら、timestamp 最新性、同一 version、migration ordering、CI gate を横断確認する
@@ -293,7 +314,7 @@ INLINE_COMMENTS_JSON_END
 | 8 | semantic-consistency | 常に sonnet | コメント宣言と実装の乖離・既存類似実装との横並び不整合・複合スナップショットの時系列不整合 |
 | 9 | impact-regression | 常に sonnet | 呼び出し元波及・データフロー上下流への影響・既存テスト fallout・enum/型変更の網羅性 |
 
-詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜9）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す。
+詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜9）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` / `{PR_CHANGED_FILES}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す（`{PR_CHANGED_FILES}` は scope guard 用、改行区切りのファイル名リスト）。
 
 ---
 
@@ -340,6 +361,13 @@ mihari が追加したテストは commit 対象に含める（Phase 8 の `git 
 
 7エージェント完了後（mihari 呼び出し時はその結果も反映）、各出力末尾の `FINDINGS: XC YW ZM VI` 行をパースして集計する。
 Phase 2 / 3 の gate findings は通常 reviewer と同じ重みで集計し、特に migration gate の Critical / Warning はループ判定から除外しない。
+
+### scope filter（MUST、PR #3600 教訓）
+
+集計の **前** に、全 finding の `path` が Phase 1 で確定した `pr_changed_files[]` に含まれているかを機械的に検証する。
+含まれていない finding は **入力汚染由来の偽陽性** とみなし、自動で破棄する。破棄件数は Phase 10 完了レポートに「Out-of-scope findings discarded: N」として必ず表示する。
+
+破棄件数が「総 finding の 20% 超」または「Critical/Warning が 1 件以上含まれる」場合は、Phase 1 の `pr_changed_files` 取得が壊れている強い兆候なので、ユーザーに警告を出し、Phase 7 のレビュー投稿前に Phase 1 の再実行を促す。
 
 ```
 Total Critical: X件
@@ -550,3 +578,5 @@ fi
 - **インラインコメント投稿失敗はループを止めない**（フォールバックとして `gh pr comment` を使用）
 - **kouunryuusui QG からの呼び出し時**: PR なしモードで動作する。QG-3 Stage 1（mihari）で既にテスト充足性・AC 適合を確認済みのため、requirements / test-adequacy 観点での指摘は参考情報として扱ってよい
 - **自分PR (IS_OWN_PR=true) の修正ジャーナル**: Phase 8 で適用した各修正を `fixes[]` として state に積み、Phase 10 で「何を検知して、どんな意図でどう修正したか」をイテレーション横断で出力する。`IS_OWN_PR=false` ではジャーナルは出さない（コード修正していないため）
+- **`git diff origin/main..<PR-branch>`（2 ドット）で PR 差分を取得しない**（ローカル `origin/main` が古いと merge コミット由来の「別 PR の変更」を PR 変更と誤認する。`gh pr diff` または 3 ドット形式を使う。詳細: `review-loop-duo/references/pr-diff-acquisition.md`）（出典: PR #3600 / 2026-05-28）
+- **PR-SCOPE-VIOLATION 系の指摘を投稿する前に、必ず `gh api .../pulls/{N}/files` で実在を確認する**（既存レビューが指摘していない大規模な scope violation は、自分の diff 取得が壊れている兆候）
