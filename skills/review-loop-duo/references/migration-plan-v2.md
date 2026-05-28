@@ -6,7 +6,7 @@
 
 `parallel-review-codex` と `review-loop-duo` は同じ「Claude + Codex の ensemble」を志向するが、以下の構造差で検出精度に差が出る:
 
-1. **Codex の使い方**: duo は 1 本に 8 観点詰め込み / parallel-review-codex は観点ごとに独立起動
+1. **Codex の使い方**: duo は 1 本に 9 観点詰め込み / parallel-review-codex は観点ごとに独立起動
 2. **出力構造**: duo は `FINDINGS:` 行パース / parallel-review-codex は JSON schema 強制
 3. **dedup**: duo はヒューリスティック / parallel-review-codex は機械 dedup + LLM consolidate
 4. **連続 run**: duo は iteration 内のみ / parallel-review-codex は run 間 diff (`new`/`carryover`/`fixed`)

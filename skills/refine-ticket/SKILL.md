@@ -40,7 +40,8 @@ license: MIT
 1. **磨かれた description**（再構成した本文）
 2. **AC**（GWT + Examples 形式、`ac-guidelines.md` 準拠）
 3. **7項目品質レポート**（充足 / 補完した項目の一覧）
-4. **補完履歴ログ**（`[補完]` で追加・推定した内容。下記「補完履歴ログ」参照）
+4. **影響範囲レポート**（7観点の波及調査結果。`impact-analysis.md` 参照）
+5. **補完履歴ログ**（`[補完]` で追加・推定した内容。下記「補完履歴ログ」参照）
 
 ## Tier 判定（両対応）
 
@@ -66,19 +67,26 @@ refine-ticket
 ├─ 2. コンテキスト補完   → references/peripheral-context.md（Step 1a）
 │     内容不十分なら親チケット/Epic を1回だけ参照
 ├─ 3. Tier 判定          → 上記「Tier 判定」（入力 or 自前）
-├─ 4. フォーマット修正   → references/ac-completion.md + ac-guidelines.md
+├─ 4. 影響範囲洗い出し   → references/impact-analysis.md
+│     呼び出し元 / 呼び出し先 / データフロー / 契約 / 既存テスト
+│     / 横断的関心事 / リリース順序 の 7観点で grep ベース調査
+│     既存修正時は必須。Tier 1 と新規開発は軽量版
+├─ 5. フォーマット修正   → references/ac-completion.md + ac-guidelines.md
 │     箇条書き→GWT、Examples 追加、抽象表現→具体値
-├─ 5. 過不足分析         → ac-guidelines.md（7項目チェックリスト）
+├─ 6. 過不足分析         → ac-guidelines.md（7項目チェックリスト）
 │     具体性・テスト可能性・正常系・異常系・境界値・副作用・非機能
-├─ 6. 自動補完           → ac-completion.md（仕様書/コード/ドメイン知識）
+│     影響範囲レポートの観点 1/2/5/6 を反映して AC に追加すべき項目を抽出
+├─ 7. 自動補完           → ac-completion.md（仕様書/コード/ドメイン知識）
 │     補完 AC に [補完] マーク + 補完履歴ログに記録
-├─ 7. description 再構成 → 磨いた AC を含む本文に整える
-└─ 8. 品質レポート出力   → 出力ファイルに 1〜4 を書き出す
+├─ 8. description 再構成 → 磨いた AC を含む本文に整える
+└─ 9. 品質レポート出力   → 出力ファイルに 1〜5（description / AC /
+        品質レポート / 影響範囲レポート / 補完履歴ログ）を書き出す
 ```
 
 各ステップの詳細は参照ファイルを読み込んで実行する:
 - **`references/ac-guidelines.md`** — AC 品質基準（7項目）・GWT+Examples フォーマット・過不足分析プロセス・アンチパターン（中核資料）
 - **`references/peripheral-context.md`** — 存在チェック・周辺チケット参照
+- **`references/impact-analysis.md`** — 影響範囲（コード波及）7観点チェックリスト・影響範囲レポート出力テンプレート
 - **`references/ac-completion.md`** — フォーマット修正・仕様書→US+AC 生成・出力テンプレート
 
 ## 補完履歴ログ

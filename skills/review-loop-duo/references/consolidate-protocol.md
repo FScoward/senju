@@ -120,7 +120,7 @@ iteration: {{N}}
 
 ## merge 後の処理
 
-8 観点分の結果を結合して `state.iterations[N].consolidatedFindings` に書き出す。集計 (Phase 6-4) はこの結果を使う。
+9 観点分の結果を結合して `state.iterations[N].consolidatedFindings` に書き出す。集計 (Phase 6-4) はこの結果を使う。
 
 ## consolidate の効果 (期待値)
 

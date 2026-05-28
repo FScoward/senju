@@ -8,7 +8,7 @@ metadata:
     github-path: skills/kouunryuusui
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 39a19a59b6e3668338a04c035bae536854e71676
+    github-tree-sha: de8cd3a1e8009688e2a22a2deaada4b94433f758
 name: kouunryuusui
 ---
 # 行雲流水（kouunryuusui） $ARGUMENTS
@@ -457,6 +457,17 @@ Verification Before Completion 鉄則と Anti-rationalization パターン集。
 **→ `references/subagent-protocol.md` を読み込む**
 
 ワーカー↔Team Lead 間のステータス定義と処理フロー。E4（Team / file-handoff オーケストレーション）で使用する。
+
+## 影響範囲調査（E2a 必須読み込み）
+
+**→ `references/impact-analysis.md` を読み込む**
+
+E2a（影響範囲調査）で 3 並列 `Explore` に渡す **7観点チェックリスト** と影響範囲レポートの出力フォーマット。
+「3 並列で見ろ」だけでは観点抜けが発生し、後段の QG / レビューで IDOR / fail-open /
+副作用見落とし / 既存テスト破壊などの形で噴出する。E2a 着手時に必ず読み込む。
+
+`refine-ticket` も同じ 7観点フレームを共有する（軽量版）。E1 で `refine-ticket` が生成した
+軽量影響範囲レポート（spec-draft.md）を出発点として、E2a で設計レベルの完全版に拡張する。
 
 ---
 

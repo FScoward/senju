@@ -1,5 +1,5 @@
 ---
-description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。8観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性・パフォーマンス・意味論的整合性）を並列レビューし、テスト不足が検出された場合はmihariスキルを自動呼び出しして深掘り補完する。修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
+description: PRのAIレビューを指摘事項（Critical/Warning）がゼロになるまで自動ループするスキル。PRなし（ローカルdiff）モード対応で、kouunryuusui QG-3 Stage 2からも直接呼び出し可能。「指摘が無くなるまでレビューして」「クリーンになるまでレビュー」「review-loop」「全部直してから終わって」「指摘ゼロになるまで続けて」「レビューを繰り返して」などの指示で必ず使うこと。9観点（コーディング規約・アーキテクチャ・セキュリティ・サイレント障害・要件充足・テスト妥当性・パフォーマンス・意味論的整合性・影響範囲回帰）を並列レビューし、テスト不足が検出された場合はmihariスキルを自動呼び出しして深掘り補完する。修正→再レビューを最大5回繰り返して自動的にコードをクリーンな状態にする。指摘が出続ける限り止まらない点が parallel-review との違い。
 license: MIT
 metadata:
     github-path: skills/review-loop
@@ -29,7 +29,7 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
   ├─ Phase 3: Database Migration Gate（migration差分がある場合のみ）
   │    Flyway version / timestamp / index / lock / scopeをdeterministicに確認する
   │
-  ├─ 8観点を並列レビュー（run_in_background: true × 8）
+  ├─ 9観点を並列レビュー（run_in_background: true × 9）
   │
   ├─ 全指摘を統合・集計
   │    Critical: X件 / Warning: Y件 / Minor: Z件 / Info: W件
@@ -110,10 +110,11 @@ fi
 | test-adequacy | **sonnet** | sonnet | sonnet |
 | performance | **sonnet** | sonnet | sonnet |
 | semantic-consistency | **sonnet** | sonnet | sonnet |
+| impact-regression | **sonnet** | sonnet | sonnet |
 
 - `silent-failure` は常にhaiku（パターン検出が主体で判断不要）
 - `coding-rules` はIteration 1 かつ diff が大きい場合のみsonnet（初回網羅後は差分確認のみ）
-- `architecture / security / requirements / test-adequacy / performance / semantic-consistency` は常にsonnet（意味理解・判断が必要）
+- `architecture / security / requirements / test-adequacy / performance / semantic-consistency / impact-regression` は常にsonnet（意味理解・判断が必要）
 
 ### 自分のPRかどうかの判定（修正可否の決定）
 
@@ -218,9 +219,9 @@ AI レビューを始める前に、GitHub 上の既存シグナル（`statusChe
 
 ---
 
-## Phase 4（各イテレーション）: 8観点並列レビュー
+## Phase 4（各イテレーション）: 9観点並列レビュー
 
-**1メッセージで8つのAgentを同時起動**（`run_in_background: true`）。
+**1メッセージで9つのAgentを同時起動**（`run_in_background: true`）。
 
 各レビュアーへの共通追加指示:
 - `{DIFF_CMD}` で差分を取得してレビュー対象を絞ること（リポジトリ全体を見ない）
@@ -276,7 +277,7 @@ INLINE_COMMENTS_JSON_END
 - **Info は `body` 末尾に `<!-- info-only -->` を付加する**（Phase 7 でフィルタリングに使用）
 - 指摘がない場合は空配列 `[]` を出力する
 
-### 8観点のレビュアー Agent
+### 9観点のレビュアー Agent
 
 各レビュアーの **Agent 起動プロンプト全文** は [`references/reviewer-prompts.md`](references/reviewer-prompts.md) に切り出している。Phase 4 を実行する時は、そのファイルを読んで該当セクションの Agent テンプレートを使うこと。
 
@@ -290,8 +291,9 @@ INLINE_COMMENTS_JSON_END
 | 6 | test-adequacy | 常に sonnet | AC未カバー・期待結果の曖昧さ・エッジケース |
 | 7 | performance | 常に sonnet | N+1・不要 SELECT・バッチ未使用・キャッシュ未活用 |
 | 8 | semantic-consistency | 常に sonnet | コメント宣言と実装の乖離・既存類似実装との横並び不整合・複合スナップショットの時系列不整合 |
+| 9 | impact-regression | 常に sonnet | 呼び出し元波及・データフロー上下流への影響・既存テスト fallout・enum/型変更の網羅性 |
 
-詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜8）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す。
+詳細プロンプトテンプレートは references/reviewer-prompts.md の対応セクション（1〜9）を参照。各テンプレートには `{DIFF_CMD}` / `{N}` / `{PR_NUMBER}` / `{TICKET_ID}` / `{DIFF_SIZE}` のプレースホルダーがあるので、Phase 1 で確定した値で差し替えてから Agent に渡す。
 
 ---
 
@@ -524,7 +526,7 @@ fi
 ### 共通の構成
 
 - イテレーション別の件数テーブル（Critical / Warning / Minor / Info / Auto-fix / PR Review or Commit）
-- 観点別サマリー（External Signals Gate / Database Migration Gate / 8 観点）
+- 観点別サマリー（External Signals Gate / Database Migration Gate / 9 観点）
 - Minor 判断（対応済み / 対応不要 / 別チケット / スコープ外）
 - **修正ジャーナル**（`IS_OWN_PR=true` のときのみ）— `state.iterations[].fixes[]` をイテレーション昇順に展開
 - 残指摘ありの場合は「手動対応が必要な指摘」セクションを末尾に追加
