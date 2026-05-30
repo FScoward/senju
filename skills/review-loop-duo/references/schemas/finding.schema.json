@@ -18,6 +18,7 @@
         "test-adequacy",
         "performance",
         "semantic-consistency",
+        "impact-regression",
         "multi"
       ]
     },
@@ -57,7 +58,7 @@
           },
           "perspective": {
             "type": "string",
-            "description": "Per-finding perspective tag. REQUIRED so multi-perspective invocations (top-level perspective='multi') can carry findings from all 8 perspectives in a single response. Single-perspective invocations should set this to match the top-level perspective.",
+            "description": "Per-finding perspective tag. REQUIRED so multi-perspective invocations (top-level perspective='multi') can carry findings from all 9 perspectives in a single response. Single-perspective invocations should set this to match the top-level perspective.",
             "enum": [
               "coding-rules",
               "architecture",
@@ -66,7 +67,8 @@
               "requirements",
               "test-adequacy",
               "performance",
-              "semantic-consistency"
+              "semantic-consistency",
+              "impact-regression"
             ]
           },
           "severity": {
