@@ -1,6 +1,6 @@
 # Finding 出力フォーマット規約 (review-loop-duo v2)
 
-Claude 側 7 Agent と Codex 側 1 プロセスは、両方とも `references/schemas/finding.schema.json` に準拠した JSON で出力する。後方互換のため `FINDINGS: XC YW ZM VI` 行も併存出力する。
+Claude 側 9 Agent と Codex 側 1 プロセスは、両方とも `references/schemas/finding.schema.json` に準拠した JSON で出力する。後方互換のため `FINDINGS: XC YW ZM VI` 行も併存出力する。
 
 ## 指摘の 3 分解（why_problem / impact / fix）
 
@@ -101,7 +101,7 @@ FINDINGS: 1C 0W 0M 0I
 備考:
 - **`why_problem` / `impact` / `fix` の 3 フィールドは必須**。1 つの自由記述 `body` に混ぜず、必ず分けて埋める（詳細は後述の「指摘の 3 分解」）
 - **`why_problem`（なぜ問題か）が最重要**。ここが空・薄い・`summary` の言い換えだけ、の指摘は不採用扱いになりうる
-- **トップレベル `perspective` と各 `findings[].perspective` の両方が必須**。Claude 側の単一観点 Agent はトップレベルと finding 側の `perspective` を同じ値で揃える。Codex 側の 8 観点統合呼び出しはトップレベルを `"multi"`、各 finding には実際の観点 (coding-rules / security / ...) を入れる
+- **トップレベル `perspective` と各 `findings[].perspective` の両方が必須**。Claude 側の単一観点 Agent はトップレベルと finding 側の `perspective` を同じ値で揃える。Codex 側の 9 観点統合呼び出しはトップレベルを `"multi"`、各 finding には実際の観点 (coding-rules / security / impact-regression / ...) を入れる
 - Before/After のコード片は `before` / `after` フィールドに分けて入れる
 - `line` が特定できない file 全体への指摘は `line: null` でよい
 - `rule_ref` は対応する coding rule doc がない場合 `null`
@@ -119,8 +119,8 @@ Codex プロンプトテンプレ要点:
 出力フォーマット (厳守):
 - レビュー本文と最終行 `FINDINGS: XC YW ZM VI` は出さなくてよい (Codex の output は --output-schema で構造化される)
 - JSON Schema (perspective / model / iteration / findings[] / summary) に従って response を組み立てること
-- **トップレベルの `perspective` は `"multi"` 固定** (Codex は 1 レスポンスで 8 観点を統合返却するため。単一観点に縛らない)
-- **`findings[]` の各要素には `perspective` フィールドを必ず付ける** (8 観点 enum のいずれか)。これにより 1 レスポンス内で観点ごとの指摘を保持し、Phase 6 の集約・dedup・consolidate が正しく走る
+- **トップレベルの `perspective` は `"multi"` 固定** (Codex は 1 レスポンスで 9 観点を統合返却するため。単一観点に縛らない)
+- **`findings[]` の各要素には `perspective` フィールドを必ず付ける** (9 観点 enum のいずれか)。これにより 1 レスポンス内で観点ごとの指摘を保持し、Phase 6 の集約・dedup・consolidate が正しく走る
 - summary の数値は findings 配列を集計した結果と一致させること
 - 各 finding の id は CDX-1, CDX-2 のように "CDX" prefix を付ける (Claude 側 CR-, SE- 等と被らないため)
 - silent-failure では、依存データの欠落や解決失敗をデフォルト値に潰して、そのまま DB 書き込み・履歴作成・通知・外部 API 呼び出しなどの副作用へ進む `lossy-fallback-before-side-effect` を Critical / Warning 候補として確認すること
@@ -150,6 +150,7 @@ dedup の精度を上げるため、`category` は以下の slug を優先して
 - 規約系: `naming`, `magic-number`, `dry-violation`, `complexity`
 - テスト系: `ac-uncovered`, `vague-assertion`, `edge-case-miss`, `flaky-time`
 - 意味論系: `comment-impl-drift`, `snapshot-time-drift`, `cross-impl-inconsistency`
+- 影響回帰系: `caller-contract-regression`, `api-schema-regression`, `enum-exhaustion-regression`, `test-fallout`
 
 副作用前の lossy fallback を指摘する場合は、汎用的な `implicit-fallback` よりも `lossy-fallback-before-side-effect` を優先する。補助的に、DB write 直前の暗黙 default は `implicit-default-before-write`、呼び出し側が失敗を観測できない fallback は `unobservable-fallback`、複数の失敗理由が同じ値へ潰れる場合は `failure-collapsed-into-value` を使ってよい。
 

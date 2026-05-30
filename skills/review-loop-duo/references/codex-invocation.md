@@ -21,9 +21,11 @@ codex exec \
 
 ### バックグラウンド起動 (Phase 4-A の Claude 並列起動と同じターンで実行)
 
-Bash ツールの `run_in_background: true` で起動する。Claude 側 7 Agent と Codex 側 1 (将来 7) プロセスが同時に走る。
+Bash ツールの `run_in_background: true` で起動する。Claude 側 9 Agent と Codex 側 1 (将来 9) プロセスが同時に走る。
 
 **必ず `< /dev/null` を付ける**（上記「推奨呼び出しパターン」参照）。付け忘れると stdin 待ちでハングし、120 秒（Bash background のデフォルト timeout）で SIGTERM kill されて `--output-last-message` が生成されない。あわせて Bash ツール側の `timeout` も 300000ms 程度に明示しておくと、レビュー完了前の早期 kill を防げる。
+
+Codex が親ランタイムの場合は、Bash の `run_in_background: true` ではなく、利用可能な shell 実行ツールでプロセスを開始し、返された session id を polling して待ち合わせる。通常 sandbox 内で子 `codex exec` が `failed to initialize in-process app-server client: Operation not permitted` などで失敗した場合は、同じコマンドを承認付きの権限外実行で 1 回だけ再試行する。権限外実行が使えない場合は `codex_enabled=false` に落とし、Claude 単独結果として扱う。認証失敗・未インストールと sandbox 失敗を混同しないこと。
 
 ## オプション解説
 
@@ -58,7 +60,7 @@ else
   MODEL_OPT=()
 fi
 
-codex exec "${MODEL_OPT[@]}" -C "$PWD" --skip-git-repo-check ... "$PROMPT"
+codex exec "${MODEL_OPT[@]}" -C "$PWD" --skip-git-repo-check ... "$PROMPT" < /dev/null
 ```
 
 ## `codex review` を使わない理由
@@ -67,7 +69,7 @@ codex exec "${MODEL_OPT[@]}" -C "$PWD" --skip-git-repo-check ... "$PROMPT"
 
 - `--output-schema` / `--output-last-message` のオプション可用性が `codex exec` ほど安定していない
 - `codex exec` なら差分を stdin / プロンプト内に流せばよいので、PR あり / なしモードを統一実装できる
-- 段階 2 (観点 × backend マトリクス化) で 7 並列起動する際に同じ呼び出しテンプレで再利用できる
+- 段階 2 (観点 × backend マトリクス化) で 9 並列起動する際に同じ呼び出しテンプレで再利用できる
 
 PR ありモードでは事前に `gh pr diff` で差分を取得し、プロンプト内に埋め込む or 一時ファイル経由で渡す。
 
@@ -87,6 +89,7 @@ PR ありモードでは事前に `gh pr diff` で差分を取得し、プロン
 | 症状 | 対処 |
 |---|---|
 | `Reading additional input from stdin...` でハング / exit 144 (SIGTERM) / `--output-last-message` 未生成 | stdin 待ち。`"$PROMPT" < /dev/null` で stdin を即 EOF にして再実行。Bash background の `timeout` も 300000ms に明示 |
+| `failed to initialize in-process app-server client: Operation not permitted` | 親 Codex ランタイムの shell sandbox で子 `codex exec` がブロックされている。承認付きの権限外実行で 1 回だけ再試行し、不可なら `codex_enabled=false` |
 | `codex: command not found` | `codex_enabled=false` に落として Claude 単独 (review-loop 相当) で続行 |
 | `codex login required` | 同上。ユーザーに `codex login` を案内 |
 | `--output-last-message` のファイルが空 | 出力欠落。1 度だけリトライ。再度失敗で当該 iteration の Codex 結果は破棄 (CLAUDE_ONLY 扱い) |
@@ -98,10 +101,10 @@ PR ありモードでは事前に `gh pr diff` で差分を取得し、プロン
 
 ## 段階 2 への布石
 
-段階 2 では Codex を観点ごとに 7 本並列起動するが、本ファイルの呼び出しテンプレを envsubst で `$PROMPT` を観点別プロンプトに差し替えれば動く構造にしてある:
+段階 2 では Codex を観点ごとに 9 本並列起動するが、本ファイルの呼び出しテンプレを envsubst で `$PROMPT` を観点別プロンプトに差し替えれば動く構造にしてある:
 
 ```bash
-for p in coding-rules architecture security silent-failure requirements test-adequacy performance semantic-consistency; do
+for p in coding-rules architecture security silent-failure requirements test-adequacy performance semantic-consistency impact-regression; do
   PROMPT=$(envsubst < "$SKILL_DIR/references/codex-prompts/${p}.md")
   codex exec ... --output-last-message "$OUTPUT_DIR/codex-${p}.json" "$PROMPT" &
 done

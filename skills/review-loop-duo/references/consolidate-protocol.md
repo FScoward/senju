@@ -59,7 +59,7 @@ state.iterations[N].consolidatedFindings
 
 ## 観点内 consolidate を行う Task agent への指示
 
-観点ごとに 1 つの Task agent を `run_in_background: true` で起動する (最大 8 並列)。`model: sonnet` 推奨 (haiku では category 推論が荒い)。
+観点ごとに 1 つの Task agent を `run_in_background: true` で起動する (最大 9 並列)。`model: sonnet` 推奨 (haiku では category 推論が荒い)。
 
 ### プロンプトテンプレ
 
