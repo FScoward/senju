@@ -1,15 +1,13 @@
 ---
-name: html-output
+description: Use when creating documents, plans, specs, reports, code reviews, design prototypes, or research summaries where rich visuals or interactivity matter. Prefer over Markdown when output exceeds ~100 lines or when color, diagrams, tables, or interactive elements would aid comprehension. 「HTMLで出力して」「HTMLファイルで作って」「リッチな出力で」「図や色を使って」「インタラクティブに」 「仕様書をHTMLで」「レポートをHTMLで」「デザインモックアップ」「プロトタイプ作って」などの発言で積極的に使うこと。
 license: MIT
-description: >-
-  Use when creating documents, plans, specs, reports, code reviews, design prototypes,
-  or research summaries where rich visuals or interactivity matter.
-  Prefer over Markdown when output exceeds ~100 lines or when color, diagrams, tables,
-  or interactive elements would aid comprehension.
-  「HTMLで出力して」「HTMLファイルで作って」「リッチな出力で」「図や色を使って」「インタラクティブに」
-  「仕様書をHTMLで」「レポートをHTMLで」「デザインモックアップ」「プロトタイプ作って」などの発言で積極的に使うこと。
+metadata:
+    github-path: skills/html-output
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: f8b0c214fda23f83709ca61f47ef744fa466effb
+name: html-output
 ---
-
 # HTML Output
 
 ## Overview
