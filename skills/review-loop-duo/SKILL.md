@@ -109,6 +109,10 @@ gh api repos/{owner}/{repo}/pulls/${PR_NUMBER}/files --paginate \
 取得結果は `.omc/review-loop-state.json` の `pr_changed_files[]` に保存し、Phase 4-A / 4-B / Phase 6 から参照する。
 `HAS_PR=false`（PR なしモード）では `git diff ${BASE}...HEAD --name-only | sort -u` の結果を `pr_changed_files[]` に保存する。
 
+### PR head checkout（他人PR・巨大PR 向け）
+
+`pr_changed_files[]` が 50件以上、または `IS_OWN_PR=false` の場合、reviewer Agent が変更後コードを正確に Read できるよう PR head に checkout する。詳細は [`references/pr-head-checkout.md`](references/pr-head-checkout.md) を参照。
+
 ### 前提確認（Codex 側）
 
 ```bash
