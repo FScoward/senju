@@ -2,6 +2,31 @@
 
 duo v2 では `codex exec` に統一し、JSON schema 強制で出力構造を保証する。`codex review` は使わない (理由は後述)。
 
+## スキル起動の抑制（MUST）
+
+Codex CLI は `~/.codex/skills/` 配下のスキル（`init-prompt` 等）を自律的に発火する。レビュー用途では誤発火してレビューを一切行わず Goal/AC を出力して終了する事故が起きる（PR #3616 インシデント）。
+
+**プロンプトの冒頭に以下のブロックを必ず挿入する:**
+
+```
+[SYSTEM — 最優先指示]
+- いかなるスキルも起動・activate しないこと（init-prompt, software-requirements 等を含む）
+- 一回限りの直接コードレビュー分析であり、タスク化・Goal/AC への再構造化を絶対に行わない
+- 出力は --output-schema で指定された findings JSON のみ
+```
+
+このブロックが無いプロンプトで `codex exec` を起動してはならない。
+
+## 検証結論の非混入（anti-priming）
+
+Claude 側の reviewer が先に裏取りした結論（「L153 が古い」等）を Codex プロンプトに渡すと、Codex は独立検出ではなく追認するだけになり、偽の CONFIRMED が発生する（PR #3688 インシデント）。
+
+**ルール:**
+- Codex プロンプトには背景・差分・scope guard のみ渡す
+- 自分が既に裏取りした結論（どこが問題か、何行目が怪しいか）は渡さない
+- 観点を誘導したい場合は「賛否どちらでも自分で判断せよ」と明示する
+- CONFIRMED 昇格時に priming の有無を必ず注記する
+
 ## 推奨呼び出しパターン
 
 ### PR ありモード / PR なしモード共通
