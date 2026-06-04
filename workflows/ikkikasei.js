@@ -206,8 +206,9 @@ ${ctx.planPath ? `- 依存グラフ: ${ctx.planPath}` : ''}
    .claude/tmp/base-branch.txt に base を記録。scratch.md と .claude/tmp/decisions/ を用意。
    （並列ワーカーは各自 feature ブランチ・worktree が異なるため衝突しない。マイグレーションファイルは PR 直前に作成して名前衝突を避ける）
 3. **T2 モック/スケルトン**: UI変更がある場合のみ。なければスキップ。
-4. **T3 実装(TDD)**: sprint-contract.md に検証基準を定義 → Red→Green→Refactor。
-   異常系・境界値・エッジケースまでテストを書く。リファクタを省略しない。
+4. **T3 実装(TDD)**: sprint-contract.md に検証基準を定義。
+   **Red フェーズ前に test-matrix スキルを起動**し、AC・仕様からテストマトリクスを生成して .claude/tmp/test-matrix.md に保存。
+   マトリクスの各テストケースを Red → Green → Refactor で実装。リファクタを省略しない。
    BE+FE両方あるなら可能な範囲で並行実装。${SKILL_BASE}/references/tdd-quality.md に従う。
 5. **QG 品質ゲート（T3完了後、判断・確認なしで即起動）**:
    - QG-1: BE \`./gradlew ktlintFormat && ./gradlew build\` / FE \`npm run check:fix && (cd frontend && npm run typecheck) && npm test\`
