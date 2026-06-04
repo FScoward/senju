@@ -276,6 +276,22 @@ Codex で Team 機構が使えない場合は、BE → FE → 統合確認の順
 
 `general-purpose` (sonnet) でTDD実装: Red → Green → Refactor → コミット
 
+### テストマトリクス生成（Red フェーズ前・必須）
+
+**→ `test-matrix` スキルを起動し、AC・仕様・実装対象からテストマトリクスを生成して `.claude/tmp/test-matrix.md` に保存する。**
+
+```
+Skill(
+  skill="test-matrix",
+  args="対象: {チケットID} の AC（spec.md / sprint-contract.md の機能検証項目）。入力パラメータ・条件分岐・状態・出力を分析し、テストマトリクスを生成せよ。"
+)
+# 出力を .claude/tmp/test-matrix.md に保存
+```
+
+生成されたマトリクスの各テストケース（TC-001〜）を Red フェーズのテスト作成対象とする。マトリクスに無いテストを「思いつき」で書かない（追加が必要なら先にマトリクスを更新する）。
+
+> **役割分担**: test-matrix は T3 Red 前の**設計時テストケース生成**（generative）。QG-3 Stage1 の mihari は**実装後のテスト充足性検証**（convergent）。test-matrix で事前設計することで mihari のループ回数を減らせる。
+
 ### TDDリファクタリング要件 & テスト品質基準
 
 **→ `references/tdd-quality.md` を読み込み、実装エージェントのプロンプトに含めること。**
