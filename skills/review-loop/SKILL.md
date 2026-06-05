@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 9d9a5fe03b1347f3993b2b4a48a3df3caf03d183
+    github-tree-sha: 826cee8bfbfbb92f849e3d239f0266c933ed1015
 name: review-loop
 ---
 # review-loop
@@ -55,6 +55,12 @@ PRのAIレビューを指摘事項が**ゼロになるまで**自動ループす
 ---
 
 ## Phase 1: 初期化
+
+### 記憶の読み込み（Phase 1 先頭）
+
+`~/.claude/skills-memory/review-loop/memory.md` が存在すれば読む。
+- **Calibration Notes** セクションを `MUST_RECHECK_TOPICS` の初期値として追加（繰り返し出る true positive を優先チェックに）
+- 確証のある false positive パターンを除外条件として Phase 4 の各レビュアープロンプトに注入する
 
 ### モード判定（最初に実行）
 
@@ -580,3 +586,19 @@ fi
 - **自分PR (IS_OWN_PR=true) の修正ジャーナル**: Phase 8 で適用した各修正を `fixes[]` として state に積み、Phase 10 で「何を検知して、どんな意図でどう修正したか」をイテレーション横断で出力する。`IS_OWN_PR=false` ではジャーナルは出さない（コード修正していないため）
 - **`git diff origin/main..<PR-branch>`（2 ドット）で PR 差分を取得しない**（ローカル `origin/main` が古いと merge コミット由来の「別 PR の変更」を PR 変更と誤認する。`gh pr diff` または 3 ドット形式を使う。詳細: `review-loop-duo/references/pr-diff-acquisition.md`）（出典: PR #3600 / 2026-05-28）
 - **PR-SCOPE-VIOLATION 系の指摘を投稿する前に、必ず `gh api .../pulls/{N}/files` で実在を確認する**（既存レビューが指摘していない大規模な scope violation は、自分の diff 取得が壊れている兆候）
+
+---
+
+## 記憶への書き込み（Phase 10 完了後）
+
+`~/.claude/skills-memory/review-loop/memory.md` に追記する:
+
+```markdown
+### YYYY-MM-DD — <PR番号 or ブランチ名>
+- **結果**: Critical=0 Warning=0 達成 / N件残存（Nイテレーション）
+- **繰り返し出た真陽性**: （例: UseCase層のトランザクション欠如、IDORガード漏れ）
+- **false positive**: （例: テストコードの直接INSERT は有効パターン）
+- **次回の校正**:
+```
+
+Calibration Notes セクションに蓄積すべき傾向があれば、そちらにも追記する。

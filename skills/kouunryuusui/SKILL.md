@@ -8,7 +8,7 @@ metadata:
     github-path: skills/kouunryuusui
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: de8cd3a1e8009688e2a22a2deaada4b94433f758
+    github-tree-sha: e67cbfcd9ba696a77a0642e56c81ba3e2594b922
 name: kouunryuusui
 ---
 # 行雲流水（kouunryuusui） $ARGUMENTS
@@ -107,6 +107,26 @@ kouunryuusui
 >
 > T3（実装）が完了したら、**判断・確認なしで即座にQG（品質ゲート）を起動せよ。**
 > 「PR作りますか？」「次のステップに進みますか？」と聞いてはならない。
+
+## 記憶（クロスセッション学習）
+
+### 読み込みタイミング（T0 着手前）
+
+`~/.claude/skills-memory/kouunryuusui/memory.md` が存在すれば読む。
+- **Gotchas** セクションを `scratch.md` 冒頭に転記し、E1〜T5 全フェーズで参照する
+- 過去の実行で詰まったパターンを把握してから着手することで同じ落とし穴を踏まない
+
+### 書き込みタイミング（T5 PR作成完了後）
+
+`~/.claude/skills-memory/kouunryuusui/memory.md` に追記する:
+
+```markdown
+### YYYY-MM-DD — <チケットID>
+- **フロー**: 上位（Epic/US）/ 下位（実装チケット）
+- **詰まった箇所とその解決策**:
+- **E&C分割で効いたパターン**:
+- **次回への申し送り**:
+```
 > T3 → QG → T5 は一気通貫で実行する。停止点はT5のPush確認のみ。
 
 > **⚠️ 絶対ルール: QG マニフェスト（`qg-result.md`）の生成は必須**

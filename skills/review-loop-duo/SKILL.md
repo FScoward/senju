@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop-duo
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: bd1a9377a0afb65a10ad067cc8879af569b8797b
+    github-tree-sha: 12c089df2a5639bdcf38179872b1541039d60829
 name: review-loop-duo
 ---
 # review-loop-duo
@@ -70,6 +70,12 @@ name: review-loop-duo
 ---
 
 ## Phase 1: 初期化
+
+### 記憶の読み込み（Phase 1 先頭）
+
+`~/.claude/skills-memory/review-loop-duo/memory.md` が存在すれば読む。
+- **Calibration Notes** セクションを `MUST_RECHECK_TOPICS` の初期値として追加（Claude 側）
+- **Codex Divergence Patterns** セクションを Phase 4-B の Codex プロンプトに注入する（Codex の過検出パターンを抑制）
 
 `review-loop` の Phase 1 をそのまま実行する。`HAS_PR` / `PR_NUMBER` / `BASE` / `DIFF_CMD` / `TICKET_ID` / `IS_OWN_PR` を確定させて
 `.omc/review-loop-state.json` に書き出す。本スキル固有の追加状態として以下を持つ:
@@ -721,3 +727,20 @@ Phase 1 の入力取得が壊れている強い兆候なので、レポートの
 - 大きな差分（> 1000 行）では Codex が timeout しがち。タイムアウトを許容しつつループは継続する
 - `kouunryuusui` QG-3 からの呼び出しでも本スキルは使える（PR なしモードで動作）
 - **自分PR (IS_OWN_PR=true) の修正ジャーナル**: Phase 8 で適用した各修正を `fixes[]` として state に積み、各エントリに `confidence` (CONFIRMED / CLAUDE_ONLY / CODEX_VALID) を付ける。Phase 10 で「何を検知して、どんな意図でどう修正したか」を confidence ラベル付きで出力する。`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正対象外のため `fixes[]` に積まない
+
+---
+
+## 記憶への書き込み（Phase 10 完了後）
+
+`~/.claude/skills-memory/review-loop-duo/memory.md` に追記する:
+
+```markdown
+### YYYY-MM-DD — <PR番号>
+- **CONFIRMED件数**: N件（両モデル合意）
+- **CLAUDE_ONLY 特筆傾向**: （例: セキュリティ境界の見落とし指摘が多い）
+- **CODEX_VALID 特筆傾向**: （例: 型安全性の指摘が有効だった）
+- **Codex hallucination**: （例: 存在しないメソッド名を指摘した）
+- **次回校正**: Codex Divergence Patterns に追記すべきパターン
+```
+
+Calibration Notes・Codex Divergence Patterns セクションに蓄積すべき傾向があれば、そちらにも追記する。

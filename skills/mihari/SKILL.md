@@ -7,7 +7,7 @@ metadata:
     github-path: skills/mihari
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: c50407f53f7428b49dbd477a544fdee9cbb8e4d4
+    github-tree-sha: 12ab6e5172cda93cca322fc0aba008b630486bfc
 name: mihari
 ---
 # 見張り（mihari） $ARGUMENTS
@@ -39,6 +39,8 @@ name: mihari
 mihari ループ (max_iterations=5, デフォルト)
 │
 ├─ 準備: 入力（AC, テストコード, 実装コード, ログ先）を読み込む
+│         → ~/.claude/skills-memory/mihari/memory.md があれば読む
+│           （Calibration Notes を Agent X/Y/Z の初回プロンプトに注入する）
 │
 ├─ Round N:
 │   ├─ 3並列レビュー
@@ -179,3 +181,19 @@ mihari はチケットから AC を取得し、関連テストコードを特定
 ```
 
 PR の差分からテストコード・実装コードを抽出し、追加テストが充足しているかレビューする。
+
+---
+
+## 記憶への書き込み（PASS / FAIL / ESCALATE 返却直後）
+
+`~/.claude/skills-memory/mihari/memory.md` に追記する:
+
+```markdown
+### YYYY-MM-DD — <対象: チケットIDまたはモジュール名>
+- **結果**: PASS / FAIL / ESCALATE（N ラウンド）
+- **false positive**: Agent X が「〜〜〜」を繰り返し指摘したが有効なパターンだった（あれば）
+- **収束パターン**: N ラウンドで収束。何が効いたか
+- **次回注意**: 次回同じ対象をレビューするときの注意点
+```
+
+Calibration Notes セクションに蓄積すべき傾向（false positive / 過検出パターン）があれば、そちらにも追記する。
