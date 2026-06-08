@@ -7,7 +7,7 @@ metadata:
     github-path: skills/mihari
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 12ab6e5172cda93cca322fc0aba008b630486bfc
+    github-tree-sha: 4ce6495be3b48cc92b71ea0d604e4f70ab607539
 name: mihari
 ---
 # 見張り（mihari） $ARGUMENTS

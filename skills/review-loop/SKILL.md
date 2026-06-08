@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 826cee8bfbfbb92f849e3d239f0266c933ed1015
+    github-tree-sha: 814624ef089112570c851df3d7d051800a1831ff
 name: review-loop
 ---
 # review-loop
