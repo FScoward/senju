@@ -1,0 +1,49 @@
+{
+  "skill_name": "review-decision-aid-html",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "receive-reviewの結果をdecision aidにしてほしい。\n\n## SHOULD（対応必須）\n\n**S1: EPAlertAnalysisResult.markAsSucceeded() の状態遷移ガードテスト**\n- ファイル: `backend/src/main/kotlin/com/example/ep/domain/EPAlertAnalysisResult.kt`\n- 指摘: markAsSucceeded() が RUNNING 以外の状態で呼ばれた場合の例外スローを、テストでカバーできていない\n- レビュアー: @yamamoto-san\n\n**S2: backfill SQL の claimed_at / claim_expires_at に説明コメント**\n- ファイル: `db/migration/V20260401__backfill_ep_alert_claims.sql`\n- 指摘: claimed_at と claim_expires_at が合成値（実際のClaimフローを経ていない）であることを示すコメントがない。後から見た人が混乱する\n- レビュアー: @tanaka-san\n\n## NICE（対応推奨）\n\n**N1: QueryService の QueryModel から Domain Entity を分離**\n- ファイル: `backend/src/main/kotlin/com/example/ep/query/EPAlertQueryService.kt`\n- 指摘: QueryModel が Domain Entity を直接参照しているのは設計上の懸念。ただし現時点では動作に問題なし\n- レビュアー: @yamamoto-san\n\n## DISCUSS（要確認）\n\n**D1: AC-6 のスコープ境界 — HR/DM/Manager のアクセス権**\n- ファイル: `frontend/src/features/ep/guards/reports-permission-guard.tsx`\n- 指摘: PR本文には「HR/DM/Manager いずれかを許可」と書いてあるが、実装では isHumanResourcesOperator のみガード。DM と Manager が到達できない\n- レビュアー: @suzuki-san\n\n## DEFER（後続PR化推奨）\n\n**F1: Scheduler の batch/parallel enqueue 化**\n- ファイル: `backend/src/main/kotlin/com/example/ep/scheduler/EPAlertScheduler.kt`\n- 指摘: 現在は逐次 enqueue しているが、アラート件数が増えると遅くなる。Cloud Tasks の parallel enqueue に変えるべき\n- レビュアー: @tanaka-san",
+      "expected_output": "tmp/pr-review-decision-aid.html が生成され、S1/S2/N1/D1/F1 の各項目に個別のラジオボタン選択肢があり、最後にコピー欄がある単体HTMLファイル",
+      "files": [],
+      "expectations": [
+        "tmp/ 配下にHTMLファイルが生成されている",
+        "各項目（S1, S2, N1, D1, F1）に対応するラジオボタンが存在する",
+        "input[type=radio] の name 属性が各項目ごとに一意になっている（decision-s1, decision-s2 など）",
+        "最後にコピー用の textarea#copy-result が存在する",
+        "コピーボタン（copy-btn）が存在する",
+        "D1 の項目に SVG 要素が含まれている（複雑な論点なので図が必要）",
+        "外部スクリプトやCDNへの参照がない（src=http の script/link タグがない）",
+        "各項目のタイトルが英語ラベル1単語ではなく、何についての話か分かる日本語になっている"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "レビュー指摘を選択しやすくしてほしい。PR #3798 のレビューで以下の指摘が来てる。\n\n1. ログ出力の整合性: LoggingService を呼ぶタイミングが usecase と scheduler で違う。usecase は処理成功後、scheduler は処理前に呼んでいる。統一してほしいと言われた（backend/src/…/EPAlertProcessingUseCase.kt, EPAlertScheduler.kt）\n\n2. backfill migration テスト: V20260401 の migration を rollback してから再適用するテストが無いと言われた（db/migration/ 配下）\n\n3. markAsSucceeded の状態遷移: RUNNING 以外から呼んだ時に IllegalStateException が出るはずだけど、テストがないと言われた\n\n4. AC-6 の境界: PRの説明だと DM もアクセスできると書いてるけど、実装は HR だけガードしてる。どちらが正しいかレビュアーに確認したい\n\n5. Scheduler のパフォーマンス: 1000件以上のアラートが溜まったら逐次 enqueue が遅くなると言われた。今回のPRスコープじゃないと思う\n\nHTMLのdecision aidにして。",
+      "expected_output": "tmp/pr-3798-review-decision-aid.html が生成され、5つの指摘それぞれに選択肢があるHTML",
+      "files": [],
+      "expectations": [
+        "tmp/pr-3798-review-decision-aid.html が生成されている（ファイル名にPR番号3798が含まれる）",
+        "5つの指摘それぞれにラジオボタン選択肢がある（input[type=radio] が5グループ以上）",
+        "最後にコピー欄がある",
+        "ページタイトルまたはh1にPR #3798 が含まれている",
+        "外部スクリプトやCDNへの参照がない"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "以下のreceive-reviewの出力をHTMLのdecision aidにして。\n\n## 分類結果サマリー\n\n- SHOULD: 2件\n- NICE: 1件\n- DISCUSS: 1件\n- DEFER: 1件\n\n---\n\n## SHOULD（今回必ず対応）\n\n**S1: EPClaimRepository.findActiveClaim() のトランザクション境界**\n`backend/src/main/kotlin/com/example/ep/infra/db/EPClaimRepository.kt:89`\n\nfindActiveClaim() が @Transactional なしで呼ばれる箇所がある。Claims テーブルは並行書き込みが発生するため、読み取りにも適切なアイソレーションレベルが必要。放置すると phantom read が起きる可能性。\n\n**S2: EPAlertPoller のエラーハンドリング**\n`backend/src/main/kotlin/com/example/ep/scheduler/EPAlertPoller.kt:156`\n\nCloud Tasks のエンキュー失敗時に RuntimeException をそのままスローしている。Scheduler はキャッチしないため、1件の失敗でポーリングループ全体が止まる。\n\n---\n\n## NICE（対応を推奨）\n\n**N1: テストファクトリのデフォルト値**\n`backend/src/test/kotlin/com/example/ep/TestEPAlertFactory.kt:34`\n\ncreatedAt のデフォルトが OffsetDateTime.now() を使っている。Clock DI で固定時刻を使うプロジェクト慣習と乖離。\n\n---\n\n## DISCUSS（確認が必要）\n\n**D1: DB commit と Cloud Tasks enqueue の順序**\n`backend/src/main/kotlin/com/example/ep/usecase/EPAlertEnqueueUseCase.kt:78`\n\nDB commit → enqueue の順に見えるが、enqueue 失敗時のロールバック挙動が不明。AT-LEAST-ONCE vs EXACTLY-ONCE の保証をどうするか要確認。\n\n---\n\n## DEFER（後続化推奨）\n\n**F1: EPAlertPoller の並列 enqueue 化**\n`backend/src/main/kotlin/com/example/ep/scheduler/EPAlertPoller.kt`\n\n逐次 enqueue のため、アラートが 500 件超えると遅延が顕在化する見込み。Cloud Tasks の batch API への移行を後続PRで実施したい。",
+      "expected_output": "tmp/ 配下に単体HTMLファイルが生成され、S1/S2/N1/D1/F1 の5項目それぞれに選択肢があり、D1にDB→enqueueフローを示すSVG図があるHTML",
+      "files": [],
+      "expectations": [
+        "tmp/ 配下にHTMLファイルが生成されている",
+        "S1, S2, N1, D1, F1 の5項目にそれぞれラジオボタン選択肢がある",
+        "D1（DB commit と Cloud Tasks enqueue の順序）にSVG図が含まれている",
+        "N1 の項目に「なぜ必要か」の説明がある（Clock DI / 決定論的テスト関連）",
+        "details/summary による折りたたみが少なくとも1か所使われている",
+        "最後にコピー用textarea とコピーボタンがある",
+        "外部スクリプトやCDNへの参照がない"
+      ]
+    }
+  ]
+}
