@@ -169,7 +169,15 @@ Phase 2 / 3 の後、または遅くとも Phase 4 の前に、差分内の fall
 ## Phase 4-A: Claude 側 9 観点並列レビュー
 
 `review-loop` の Phase 4 と同じ。1 メッセージで 9 つの Agent を `run_in_background: true` で起動する。
-各レビュアーのモデル選択ルール（haiku / sonnet）、出力フォーマット（`FINDINGS: XC YW ZM VI`、`INLINE_COMMENTS_JSON:` ブロック）も同じ。
+
+### reviewer モデル選択ルール
+
+| model | 観点 |
+|---|---|
+| haiku | coding-rules / requirements / test-adequacy / performance |
+| sonnet | security / silent-failure / architecture / impact-regression / semantic-consistency |
+
+haiku 側はパターン認識で十分な観点。sonnet 側はセキュリティ境界・副作用分析・アーキテクチャ判断・回帰影響を含み、深い推論が必要。
 
 **v2 追加**: 各 Agent は **構造化 JSON 出力** も併存させる必要がある (Phase 6 の機械的集約と Phase 6-3.5 consolidate のため)。
 **`review-loop` の reviewer-prompts.md は旧フォーマット（`[重大度] ファイル名:行番号 - 問題の説明`）のままなので、各 Claude reviewer Agent を起動する際は、プロンプト末尾に [`references/finding-output-format.md`](references/finding-output-format.md) の「指摘の 3 分解」セクションと「Claude 側 Agent への追加指示」を必ず追記すること**（これを怠ると Claude 側だけ `why_problem` / `impact` / `fix` が埋まらず、Codex 側のみ新フォーマットになる）。各 finding は `why_problem`（なぜ問題か＝機序・最重要）/ `impact`（なぜ修正が必要か＝帰結）/ `fix`（どう直すか＝方針）の 3 フィールドを必ず埋める。
@@ -409,7 +417,8 @@ Codex の指摘は hallucination リスクがあるので、修正適用前に C
 
 要点だけ抜粋:
 
-- 観点ごとに 1 つの Task agent を `run_in_background: true` で起動 (最大 9 並列、`model: sonnet`)
+- **タイミング**: 最終 iteration（ループ終了判定直前）または Phase 7 投稿直前のみ。中間 iteration はスキップ
+- **起動条件**: 観点ごとに findings が 2 件以上の観点のみ agent を起動（最大 9 並列、`model: haiku`）
 - 機械 dedup を通過したが「別問題」と判断したものは絶対に統合しない
 - 統合後 severity は元 findings の最高値に昇格 (`severity_promoted: true` を立てる)
 - CONFIRMED finding (両 backend 検出) は単独でも統合せず保持
@@ -417,7 +426,6 @@ Codex の指摘は hallucination リスクがあるので、修正適用前に C
 - 観点跨ぎ統合は禁止
 
 結果は `state.iterations[N].consolidatedFindings` に書き出し、6-4 以降の集計はこの結果を使う。
-小規模 PR (findings 5 件未満) や Critical/Warning がない iteration ではこの Phase をスキップする。
 `state.iterations[N].consolidate.status` に `success` / `partial` / `skipped` / `failed` を記録する。
 
 ### 6-4. 集計
@@ -574,20 +582,10 @@ git commit -m "review-loop-duo: iter${N} - fix ${X}C ${Y}W (CONFIRMED: ${a}, Cla
 
 ## Phase 10: 完了レポート
 
-`review-loop` の Phase 10 に加え、duo 統計を必ず出す:
+`review-loop` の Phase 10 に加え、duo 統計を必ず出す（テーブルフォーマットは [`references/phase-10-report-templates.md`](references/phase-10-report-templates.md) を参照）。
 
-```
-## ✅ Review Loop Duo 完了
-
-| Iter | Critical | Warning | Minor | Info | CONFIRMED | Claude-only | Codex-valid | Codex-doubtful | Agreement |
-|------|----------|---------|-------|------|-----------|-------------|-------------|----------------|-----------|
-| #1   |        3 |       5 |     1 |    2 |         4 |           3 |           1 |              1 |       50% |
-| #2   |        1 |       2 |     1 |    1 |         2 |           1 |           0 |              0 |       67% |
-| #3   |        0 |       0 |     1 |    1 |         0 |           0 |           0 |              0 |        —  |
-
-Codex hallucination 検出: ${HALLUCINATION_COUNT} 件（破棄済み）
-Codex タイムアウト: ${CODEX_TIMEOUT_COUNT} 回
-```
+出力列: Iter / Critical / Warning / Minor / Info / CONFIRMED / Claude-only / Codex-valid / Codex-doubtful / Agreement。  
+末尾に Codex hallucination 検出件数と Codex タイムアウト回数を付ける。
 
 agreement rate が低い（< 30%）場合は、両モデルの観点に大きな差があることを意味する。
 報告に「Claude と Codex で観点ズレが大きい。指摘の独立性が高く、見逃しリスクが低かった可能性」と添えると有用。
@@ -612,82 +610,18 @@ Phase 1 の入力取得が壊れている強い兆候なので、レポートの
 
 ### v2 追加セクション: consolidate 統計
 
-`state.iterations[N].consolidate.status` が `success` / `partial` だった iteration について、観点ごとに以下を追加表示する:
-
-```
-## 📦 観点内 consolidate 統計
-
-| 観点 | Pre-consolidate | Post-consolidate | 圧縮率 | severity 昇格 |
-|---|---:|---:|---:|---:|
-| coding-rules | 12 | 7 | 42% | 2 件 |
-| security | 5 | 3 | 40% | 1 件 |
-| ...
-
-合計: 71 → 48 件 (32% 圧縮)
-```
-
+`state.iterations[N].consolidate.status` が `success` / `partial` だった iteration について、観点ごとに Pre/Post 件数・圧縮率・severity 昇格件数を表示する（フォーマットは [`references/phase-10-report-templates.md`](references/phase-10-report-templates.md) 参照）。
 `partial` の場合は失敗観点を脚注で示し、`skipped` の iteration は表から除外する。
 
 ### v2 追加セクション: diff-runs サマリ
 
-`state.iterations[N].diffRuns` が記録された iteration について以下を追加:
-
-```
-## 🔁 連続 run の差分 (diff-runs)
-
-前回 run: runs/2026-05-22-1620-pr3122-iter2.json
-
-| 分類 | 件数 |
-|---|---:|
-| 🆕 new (今回新規) | 2 |
-| ♻️ carryover (継続) | 3 |
-| ✅ fixed (解消) | 5 |
-
-### 🆕 今回新規発生した Critical/Warning
-- [Critical] src/foo/Cache.kt:88 (PF-2) - キャッシュ初期化漏れ
-  → 前回 fix した SE-1 の副作用の可能性あり
-
-### ♻️ 3 run 連続で carryover している指摘 (手動対応推奨)
-- [Warning] src/foo/Util.kt:17 (SF-1) - 空 catch  (carryover_count=3)
-```
-
+`state.iterations[N].diffRuns` が記録された iteration について、new/carryover/fixed の件数と Critical/Warning の内訳を出力する（フォーマットは [`references/phase-10-report-templates.md`](references/phase-10-report-templates.md) 参照）。
 初回 run やスキップ iteration では本セクションを出さない。
 
 ### 修正ジャーナル（自分PR・duo 版）
 
-`IS_OWN_PR=true` のときのみ、`review-loop` Phase 10 のジャーナルに加えて
-各エントリの見出しに **confidence ラベル** を付ける。各エントリは finding の 3 分解
-（なぜ問題か / 放置リスク / どう直したか）をそのまま引き継いで書く:
-
-```
-## 修正ジャーナル（自分PR）
-
-### Iteration 1
-#### [Critical] [CONFIRMED] src/foo/Bar.kt:42  (security / tenant-isolation)
-- なぜ問題か: findById が主キーだけで引き、テナント境界の不変条件を満たさない。tenantId が WHERE に無く id 列挙で越境できる（Claude + Codex 一致）
-- 放置リスク: 他テナント利用者が id 差し替えで別企業の注文を閲覧（IDOR）。個人情報の越境漏洩
-- どう直したか: OrderRepository.findById → findByIdAndTenantId に置換し SQL レベルで認可を強制
-- commit: abc1234
-
-#### [Warning] [Codex-valid] src/foo/Cache.kt:88  (performance / cache-miss)
-- なぜ問題か: 同一クエリを毎回 DB に投げており、結果が不変なのにキャッシュしていない（Codex のみ、Claude 精査済み）
-- 放置リスク: N+1 ではないが高頻度アクセスで latency が累積。ピーク時に DB 負荷が線形に増える
-- どう直したか: Caffeine.builder().maximumSize(256).build() を導入
-- commit: def5678
-
-### Iteration 2
-#### [Warning] [Claude-only] src/foo/Util.kt:17  (silent-failure / empty-catch)
-- なぜ問題か: catch (Exception) で握りつぶし、ログも再throwも無く処理を継続している（Claude のみ）
-- 放置リスク: 失敗が呼び出し側に伝播せず、障害が無言で進行する。原因調査の手がかりも残らない
-- どう直したか: logger.error 追加 + DomainException に変換して呼び出し側へ伝播
-- commit: ghi9012
-
-### Iteration 3
-✅ 完了（Critical/Warning ゼロ）
-```
-
-`confidence` ラベルを見出しに出すことで、後から「両モデル合意の指摘」と「片方のみの指摘」を識別できる。
-`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正していないのでジャーナルに出ない（既存の duo 統計テーブルで件数のみ示す）。
+`IS_OWN_PR=true` のときのみ、各エントリの見出しに **confidence ラベル** (`[CONFIRMED]` / `[Claude-only]` / `[Codex-valid]`) を付ける。各エントリは finding の 3 分解（なぜ問題か / 放置リスク / どう直したか）を引き継いで書く（フォーマットは [`references/phase-10-report-templates.md`](references/phase-10-report-templates.md) 参照）。
+`CODEX_DOUBTFUL` / `CODEX_HALLUCINATION` は修正していないのでジャーナルに出ない（duo 統計テーブルで件数のみ示す）。
 
 ---
 

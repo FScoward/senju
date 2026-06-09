@@ -4,11 +4,18 @@
 
 ## 実行条件
 
-以下を全て満たす iteration でのみ実行する:
+以下の条件で実行する:
 
-- 機械 dedup 後の findings 総数が 5 件以上
-- iteration 内に Critical または Warning が 1 件以上含まれる
+- **タイミング: 最終 iteration（ループ終了判定直前）または Phase 7 投稿直前のみ**  
+  中間 iteration ではスキップ（中間で統合した findings はどうせ次 iteration で消える可能性が高く、agent 起動のコスト対効果が低い）
 - ENV `DUO_DISABLE_CONSOLIDATE` が未設定
+
+起動する agent は **観点ごとに個別判定**する:
+
+- その観点の機械 dedup 後 findings が **2 件以上** → agent を起動
+- findings が 0〜1 件の観点 → スキップ（統合する対象がない）
+
+> **旧条件「総数 ≥ 5 かつ Critical/Warning ≥ 1」は廃止。** 総数 10 件でも各観点に 1 件ずつ散らばっていれば 9 agents 全員が空振りしていた。観点ごとのゲートにより、典型的な PR では 9 → 2〜3 agents に削減できる。
 
 満たさない場合はスキップして Phase 6-4 (集計) に進む。
 
@@ -59,7 +66,7 @@ state.iterations[N].consolidatedFindings
 
 ## 観点内 consolidate を行う Task agent への指示
 
-観点ごとに 1 つの Task agent を `run_in_background: true` で起動する (最大 9 並列)。`model: sonnet` 推奨 (haiku では category 推論が荒い)。
+観点ごとに 1 つの Task agent を `run_in_background: true` で起動する（実行条件を満たした観点のみ、最大 9 並列）。`model: haiku` 推奨（consolidate は同根パターンの識別タスクであり、深い推論は不要。semantic-consistency 観点で CONFIRMED が多数ある場合のみ sonnet を検討）。
 
 ### プロンプトテンプレ
 
