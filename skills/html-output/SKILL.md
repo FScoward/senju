@@ -5,7 +5,7 @@ metadata:
     github-path: skills/html-output
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: cb2c54fa625056a55dff556b071a49421ca08f17
+    github-tree-sha: 7a2dbce3b5688afe40a1972e12d6f97a3a324093
 name: html-output
 ---
 # HTML Output
