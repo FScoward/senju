@@ -166,18 +166,41 @@ Phase 2 / 3 の後、または遅くとも Phase 4 の前に、差分内の fall
 
 ---
 
-## Phase 4-A: Claude 側 9 観点並列レビュー
+## Phase 4 実行前: PR サイズ縮退ゲート
 
-`review-loop` の Phase 4 と同じ。1 メッセージで 9 つの Agent を `run_in_background: true` で起動する。
+Phase 3.5 完了後、以下を計測してモードを決定する:
 
-### reviewer モデル選択ルール
+```bash
+CHANGED_FILES_COUNT=$(wc -l < /tmp/pr-changed-files.txt)
+DIFF_LINES=$(${DIFF_CMD} | grep -c '^[+-]' || echo 0)
+```
 
-| model | 観点 |
-|---|---|
-| haiku | coding-rules / requirements / test-adequacy / performance |
-| sonnet | security / silent-failure / architecture / impact-regression / semantic-consistency |
+| 条件 | モード | 起動する Agent / Codex |
+|---|---|---|
+| `CHANGED_FILES_COUNT <= 5` **かつ** `DIFF_LINES <= 100` | **lite モード** | security(sonnet) / coding-rules(haiku) / impact-regression(sonnet) の 3 Agent のみ。Codex なし |
+| それ以外 | **full duo モード** | 下記 reviewer モデル選択ルール通り（7 Agent + Codex） |
 
-haiku 側はパターン認識で十分な観点。sonnet 側はセキュリティ境界・副作用分析・アーキテクチャ判断・回帰影響を含み、深い推論が必要。
+`DUO_MODE` を `"lite"` / `"full"` に設定して state に書き込む。lite モードでは Phase 4-B (Codex) もスキップ。Phase 10 レポートで `[lite mode: 3 perspectives]` を表示する。
+
+---
+
+## Phase 4-A: Claude 側並列レビュー
+
+`review-loop` の Phase 4 と同じ。1 メッセージで Agent を `run_in_background: true` で起動する（full duo: 7 Agent、lite: 3 Agent）。
+
+### reviewer モデル選択ルール（full duo: 9 → 7 Agent）
+
+| model | Agent | 担当観点 |
+|---|---|---|
+| haiku | Agent-A | coding-rules + requirements（パターン認識 2 観点を 1 Agent に統合） |
+| haiku | Agent-B | performance + test-adequacy（分析系 2 観点を 1 Agent に統合） |
+| sonnet | Agent-C | security |
+| sonnet | Agent-D | silent-failure |
+| sonnet | Agent-E | architecture |
+| sonnet | Agent-F | impact-regression |
+| sonnet | Agent-G | semantic-consistency |
+
+haiku 側はパターン認識で十分な 2 観点を 1 Agent に統合し、4 → 2 Agent に削減。sonnet 側はセキュリティ境界・副作用分析・アーキテクチャ判断・回帰影響を含み深い推論が必要なため単独維持。
 
 **v2 追加**: 各 Agent は **構造化 JSON 出力** も併存させる必要がある (Phase 6 の機械的集約と Phase 6-3.5 consolidate のため)。
 **`review-loop` の reviewer-prompts.md は旧フォーマット（`[重大度] ファイル名:行番号 - 問題の説明`）のままなので、各 Claude reviewer Agent を起動する際は、プロンプト末尾に [`references/finding-output-format.md`](references/finding-output-format.md) の「指摘の 3 分解」セクションと「Claude 側 Agent への追加指示」を必ず追記すること**（これを怠ると Claude 側だけ `why_problem` / `impact` / `fix` が埋まらず、Codex 側のみ新フォーマットになる）。各 finding は `why_problem`（なぜ問題か＝機序・最重要）/ `impact`（なぜ修正が必要か＝帰結）/ `fix`（どう直すか＝方針）の 3 フィールドを必ず埋める。
