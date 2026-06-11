@@ -4,7 +4,7 @@ metadata:
     github-path: skills/review-decision-aid-html
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 70ed67f4df00ef25185bd9434c2c935e8c20b6a2
+    github-tree-sha: 9e0cd73de486646afc9c78fa24e41209cd8a77e8
 name: review-decision-aid-html
 ---
 # レビュー対応 Decision Aid HTML スキル
