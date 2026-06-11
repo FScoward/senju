@@ -1,11 +1,11 @@
 ---
-description: review-loop を Claude と Codex CLI の 2 モデルで「並列に」回し、両者の指摘を統合して Critical/Warning がゼロになるまでループするスキル。Claude の 9 観点並列レビューと Codex CLI（`codex exec` / `codex review`）の独立レビューを各イテレーションで同時起動し、両モデルが合致した指摘は信頼度を昇格、片方だけの指摘は精査ラベルを付けて統合する。「review-loop-duo」「duo review」「並列レビュー」「Claude と Codex 両方でレビュー」「2 つのモデルでクロスレビュー」「dual review」「review-loop codex」「Claude だけだと不安だから Codex も並走」「セカンドオピニオン込みでレビューループ」「両方の AI でゼロになるまで」などの発言で必ずこのスキルを使うこと。単体 `review-loop`（Claude のみ）と単体 `codex-cli`（Codex 単発）に対し、本スキルは「両者を同期させたループ」を提供する。指摘の網羅性を最優先したい時、片方のモデルが見落とすリスクを許容したくない時、PR の重要度が高い時にも積極的に発動してよい。
+description: review-loop を Claude と Codex CLI の 2 モデルで「並列に」回し、両者の指摘を統合して Critical/Warning がゼロになるまでループするスキル。Claude の 9 観点並列レビューと Codex CLI（`codex exec` / `codex review`）の独立レビューを各イテレーションで同時起動し、両モデルが合致した指摘は信頼度を昇格、片方だけの指摘は精査ラベルを付けて統合する。「review-loop-duo」「duo review」「並列レビュー」「Claude と Codex 両方でレビュー」「2 つのモデルでクロスレビュー」「dual review」「review-loop codex」「Claude だけだと不安だから Codex も並走」「セカンドオピニオン込みでレビューループ」「両方の AI でゼロになるまで」などの発言で必ずこのスキルを使うこと。単体 `review-loop`（Claude のみ）と単体 `codex-cli`（Codex 単発）に対し、本スキルは「両者を同期させたループ」を提供する。指摘の網羅性を最優先したい時、片方のモデルが見落とすリスクを許容したくない時、PR の重要度が高い時にも積極的に発動してよい。また「review-loop-duo reflect」「改善ログを見直して」「SKILL改善候補を出して」「スキルの改善提案を出して」「review-loop-duo の改善点」「改善シグナルを確認」などの発言でも本スキルを使うこと（この場合は reflect モードで起動し通常レビューループは実行しない）。
 license: MIT
 metadata:
     github-path: skills/review-loop-duo
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 13de5284d600407b1e09ed18537788d048069bfc
+    github-tree-sha: 6dcf4e187c50bf54ce9f0a8f9590595cc51c765e
 name: review-loop-duo
 ---
 # review-loop-duo
@@ -70,6 +70,13 @@ name: review-loop-duo
 ---
 
 ## Phase 1: 初期化
+
+### reflect モード分岐（Phase 1 最先頭）
+
+ユーザーの発言に「reflect」「改善ログを見直して」「SKILL改善候補を出して」「スキルの改善提案を出して」「改善シグナルを確認」等が含まれる場合は **reflect モード** として起動する。
+通常のレビューループ（Phase 2〜10）は実行しない。代わりに [`references/improvement-loop.md`](references/improvement-loop.md) の「reflection 手順」に従って Improvement Signals を集計・提案表示し、終了する。
+
+それ以外（PR 番号指定、PR URL、「レビューして」等）は通常モードとして以下を続行する。
 
 ### 記憶の読み込み（Phase 1 先頭）
 
@@ -701,3 +708,14 @@ Phase 1 の入力取得が壊れている強い兆候なので、レポートの
 ```
 
 Calibration Notes・Codex Divergence Patterns セクションに蓄積すべき傾向があれば、そちらにも追記する。
+
+### Improvement Signals upsert（Phase 10 末尾）
+
+今回 run から得られた改善示唆（mechanism / lens）を `## Improvement Signals` セクションへ upsert する。
+詳細ロジック・signature 命名規約・nudge 発火条件・定数は [`references/improvement-loop.md`](references/improvement-loop.md) を参照。
+
+upsert 後、nudge 判定を行う。発火条件を満たす場合は完了レポートの末尾に 1 行だけ出す:
+```
+💡 Improvement Signals に未 reflect のシグナルが溜まっています。`review-loop-duo reflect` で改善候補を確認できます。
+```
+nudge は 1 行のみ。reflection 本体は起動しない（レビュー完了フローを中断させない）。
