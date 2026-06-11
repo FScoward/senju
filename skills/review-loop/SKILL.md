@@ -7,6 +7,7 @@ metadata:
     github-repo: https://github.com/FScoward/senju
     github-tree-sha: 814624ef089112570c851df3d7d051800a1831ff
 name: review-loop
+model: sonnet
 ---
 # review-loop
 

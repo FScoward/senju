@@ -1,5 +1,6 @@
 ---
 name: pr-size-guard
+model: sonnet
 license: MIT
 description: >-
   PRを push / 作成する直前に差分サイズを測定し、閾値を超えていたら分割を促すセルフチェックスキル。

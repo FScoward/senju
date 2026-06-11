@@ -7,6 +7,7 @@ metadata:
     github-repo: https://github.com/FScoward/senju
     github-tree-sha: 7a2dbce3b5688afe40a1972e12d6f97a3a324093
 name: html-output
+model: sonnet
 ---
 # HTML Output
 

@@ -1,5 +1,6 @@
 ---
 name: jira-cli
+model: sonnet
 license: MIT
 description: ankitpokhrel/jira-cli を使ってJiraを操作するスキル。「Jiraのイシューを見たい」「バグを起票して」「JIRAにコメントを追加して」「〇〇-123を確認して」「イシューを作成して」「Jiraを操作して」など、Jiraに関する操作が含まれたら積極的に使うこと。イシューの閲覧・作成・コメント追加をCLIで実行する。
 ---
