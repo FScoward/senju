@@ -1,5 +1,6 @@
 ---
 name: init-prompt
+model: sonnet
 license: MIT
 description: >-
   新しいタスク・機能追加・バグ修正・設計依頼など、**あらゆる初回指示**を受け取ったときに

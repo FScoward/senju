@@ -7,6 +7,7 @@ metadata:
     github-repo: https://github.com/FScoward/senju
     github-tree-sha: 289510a3edf536cc36aca8ff55f3cf204d2b7b59
 name: test-matrix
+model: sonnet
 ---
 # test-matrix
 

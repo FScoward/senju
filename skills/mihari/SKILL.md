@@ -9,6 +9,7 @@ metadata:
     github-repo: https://github.com/FScoward/senju
     github-tree-sha: 4ce6495be3b48cc92b71ea0d604e4f70ab607539
 name: mihari
+model: sonnet
 ---
 # 見張り（mihari） $ARGUMENTS
 

@@ -6,6 +6,7 @@ metadata:
     github-repo: https://github.com/FScoward/senju
     github-tree-sha: 9e0cd73de486646afc9c78fa24e41209cd8a77e8
 name: review-decision-aid-html
+model: sonnet
 ---
 # レビュー対応 Decision Aid HTML スキル
 
