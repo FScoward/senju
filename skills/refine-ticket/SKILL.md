@@ -70,6 +70,8 @@ refine-ticket
 ├─ 0. 記憶読み込み       → ~/.claude/skills-memory/refine-ticket/memory.md
 │     ファイルが存在すれば、チケットのドメイン領域を推定して一致する
 │     エントリ（ドメイン制約・誤補完履歴）を抽出し Step 8 に注入する
+│     ## Recurring Review Findings セクションが存在すれば、一致ドメインの
+│     エントリを抽出して Step 7（過不足分析）のヒントとして注入する
 ├─ 1. 存在チェック       → references/peripheral-context.md（Step 1）
 │     チケットに AC があるか / 仕様書リンクがあるか / 内容が十分か
 ├─ 2. コンテキスト補完   → references/peripheral-context.md（Step 1a）
@@ -171,3 +173,23 @@ AC を補完・推定・解釈・分割したら、その履歴を残す。**何
 
 誤補完の訂正は refine 実行直後でなく **後のセッションで発覚することがある**。
 ユーザーが「あの補完は間違いだった」と指摘したら、該当エントリを探して `誤補完` 欄に追記する。
+
+### Recurring Review Findings（review-loop-duo フィードバック）
+
+`## Recurring Review Findings` セクションが存在する場合:
+1. チケットのドメイン領域に一致するエントリ（`domain:` が一致）を抽出する
+2. Step 7（過不足分析）に注入する: 「レビューで繰り返し検出されたパターン → AC にこの観点が含まれているか確認」
+3. Step 8（自動補完）では使わない — あくまで人間が判断する AC ヒントとして提示するのみ
+
+エントリのスキーマ（`review-loop-duo reflect` が提案し、人間が承認して追記）:
+
+```markdown
+### <domain>:<pattern-slug>
+- **domain**: <認証|権限|通知|課金|etc.>
+- **ac_hint**: AC に含めるべきチェック観点（前向き表現。1〜2行）
+  例: 「参照系と更新系エンドポイントの権限が対称か AC に明記する」
+- **source_signal**: review-loop-duo の lens signature（参照元）
+- **count**: 検出回数（参考値）
+```
+
+書き込み: `review-loop-duo reflect` が lens 信号を昇格させる際に追記候補を提案する。`refine-ticket` 自身は書き込まない。
