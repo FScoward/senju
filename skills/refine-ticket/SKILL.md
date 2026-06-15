@@ -5,7 +5,7 @@ metadata:
     github-path: skills/refine-ticket
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: 37865006021b4f2fbcbf1ebb6aebc43233349669
+    github-tree-sha: f81eb1dc8f01c87690d7391c4d62f80f1337e162
 name: refine-ticket
 ---
 # refine-ticket

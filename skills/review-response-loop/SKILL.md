@@ -1,9 +1,13 @@
 ---
-name: review-response-loop
 description: PRレビュー指摘の修正が完了した後、QG（品質ゲート）→ commit → push → 全スレッドへの返信＆Resolve を一気通貫で実行するスキル。receive-review（トリアージ＋プラン）の後半ライフサイクルを自動化する。「修正終わった」「全部直した」「スレッド返信して」「QG回してpush」「レビュー対応の仕上げ」「review-response-loop」「返信してResolve」「レビュー対応完了まで」「修正してpushしてResolve」などの発言で必ずこのスキルを使うこと。receive-review のトリアージ結果（MUST/SHOULD/NICE/DISCUSS/DEFER）を受け取って実行フェーズに移行する場合にも使う。
 license: MIT
+metadata:
+    github-path: skills/review-response-loop
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: f3bca62704fcfec8b094937dcf3ff927284020f4
+name: review-response-loop
 ---
-
 # review-response-loop
 
 receive-review（トリアージ＋プラン）で仕分けた指摘を、修正→QG→commit→push→返信＆Resolve まで一気に駆け抜ける。

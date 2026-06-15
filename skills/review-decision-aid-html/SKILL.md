@@ -4,7 +4,7 @@ metadata:
     github-path: skills/review-decision-aid-html
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: da382808ce93a0d8e151021ad0712141e331c738
+    github-tree-sha: 1d9e97fef0eff842606b53e392974aaa352b3d9d
 model: sonnet
 name: review-decision-aid-html
 ---
