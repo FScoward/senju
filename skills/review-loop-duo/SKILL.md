@@ -681,6 +681,7 @@ Phase 1 の入力取得が壊れている強い兆候なので、レポートの
 - **`git diff origin/main..<PR-branch>` で PR 差分を取得しない**（ローカル `origin/main` が古いと merge コミット由来の「別 PR の変更」を PR 変更と誤認する。代わりに `gh api repos/.../pulls/{N}/files` を使う。詳細: [`references/pr-diff-acquisition.md`](references/pr-diff-acquisition.md)）（出典: PR #3600 / 2026-05-28）
 - **PR-SCOPE-VIOLATION 系の指摘を投稿する前に、必ず `gh api .../pulls/{N}/files` で実裁を確認する**（既存レビューが指摘していない大規模な scope violation は、自分の diff 取得が壊れている兆候。両モデルが同じ汚染入力を見て CONFIRMED で押し上げる共倒れが起きる）（出典: PR #3600）
 - **「両モデルが CONFIRMED している = 高信頼」と短絡する**（両者が同じ汚染入力を見ていれば CONFIRMED でも偽陽性。Phase 1 が `gh api` 経由で `pr_changed_files[]` を取得していることを必ず確認してから CONFIRMED を信用する）
+- **shell 特殊文字を含む body を `--field body="..."` で渡す**。`(`, `)`, `{`, `}` が展開されて parse エラーになる。代わりに `Write` で一時ファイル（例: `/tmp/review-comment.md`）に書き出し、`--field body=@/tmp/review-comment.md` で渡すこと（出典: PR #3830 インライン投稿）
 
 ---
 

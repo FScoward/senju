@@ -52,6 +52,29 @@ Bash ツールの `run_in_background: true` で起動する。Claude 側 9 Agent
 
 Codex が親ランタイムの場合は、Bash の `run_in_background: true` ではなく、利用可能な shell 実行ツールでプロセスを開始し、返された session id を polling して待ち合わせる。通常 sandbox 内で子 `codex exec` が `failed to initialize in-process app-server client: Operation not permitted` などで失敗した場合は、同じコマンドを承認付きの権限外実行で 1 回だけ再試行する。権限外実行が使えない場合は `codex_enabled=false` に落とし、Claude 単独結果として扱う。認証失敗・未インストールと sandbox 失敗を混同しないこと。
 
+## macOS での gtimeout（タイムアウト制御）
+
+macOS はデフォルトで GNU `timeout` コマンドを持たない。Bash ツールの `timeout` パラメータ（ミリ秒）で代替できるが、シェルスクリプト内でプロセスをタイムアウト制御するには `gtimeout` が必要（GNU coreutils 9.11+ で動作確認済み）。
+
+```bash
+brew install coreutils  # 一度だけ。/opt/homebrew/bin/gtimeout として配備される
+```
+
+タイムアウト付き起動例（300 秒制限）:
+
+```bash
+gtimeout 300 codex exec \
+  -C "$PWD" \
+  --skip-git-repo-check \
+  -s read-only \
+  --color never \
+  --output-schema "$SKILL_DIR/references/schemas/finding.schema.json" \
+  --output-last-message "$OUTPUT_DIR/codex-iter${N}.json" \
+  "$PROMPT" < /dev/null
+```
+
+`gtimeout` 未インストール環境では Bash ツールの `timeout: 300000` で代替する。`< /dev/null` は `gtimeout` 使用時も必須。
+
 ## オプション解説
 
 | オプション | 役割 | 必須 |
@@ -123,6 +146,8 @@ PR ありモードでは事前に `gh pr diff` で差分を取得し、プロン
 | 300 秒タイムアウト | duo Phase 4-B の既存挙動: 次イテレーションで再挑戦 |
 | 指摘 line がファイル末尾超 | hallucination として Phase 6-3 で破棄 |
 | 指摘 path がリポジトリ非存在 | 同上 |
+| Codex 出力ファイルが Read 上限超（数万 tokens） | `tail -100 /tmp/codex-iter${N}.json` / `grep -A5 "WARNING\|Critical"` で必要部分のみ抽出。全件 Read は不要かつ失敗する |
+| `gh pr diff {N} -- file1 file2` が `accepts at most 1 arg(s)` で失敗 | `gh pr diff` は複数ファイル指定不可。ファイルを個別 Read させるか `gh pr diff {N}` で全差分を取得する（出典: PR #3828）|
 
 ## 段階 2 への布石
 
