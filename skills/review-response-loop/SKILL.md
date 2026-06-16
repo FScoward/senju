@@ -5,7 +5,7 @@ metadata:
     github-path: skills/review-response-loop
     github-ref: refs/heads/main
     github-repo: https://github.com/FScoward/senju
-    github-tree-sha: f3bca62704fcfec8b094937dcf3ff927284020f4
+    github-tree-sha: 281e1dc26dbe5723589a4fbc147069ece5322ef7
 name: review-response-loop
 ---
 # review-response-loop
