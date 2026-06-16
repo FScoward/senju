@@ -347,6 +347,35 @@ Skill(
 QGは**単一のサブエージェント**（`general-purpose` sonnet 相当）内で以下を順番に実行する。Codex でサブエージェントが使えない場合はメインセッションで同じ順序・同じ証跡要件を満たす。
 メインセッションに返すのは最終結果（PASS/FAIL + サマリー）のみ。
 
+### QG-0: プロジェクト固有ルールチェック（grep 自動検出）
+
+> **QG-1 の前に実行する。** `~/.claude/review-rules/` に蓄積されたレビュー指摘パターンを grep で自動検出し、人間のレビュアーに到達する前に潰す。
+
+`~/.claude/review-rules/backend.md` と `~/.claude/review-rules/frontend.md` が存在する場合に読み込む。ファイルが無ければこの Step をスキップして QG-1 へ進む。
+
+#### Grep チェック（Kotlin / Spring Boot テストコード）
+
+PR 変更ファイル内で以下を検出した場合 **Critical** として記録し、修正してから QG-1 へ進む:
+
+| ルール（出典） | コマンド | 判定 |
+|--------------|---------|------|
+| `*.now()` 禁止 — Clock DI と乖離して CI がフレーキーになる | `grep -rn "OffsetDateTime\.now()\|Instant\.now()\|LocalDate\.now()" backend/src/test/kotlin` | 1件以上 → Critical |
+| `Table.insert {}` 直接 insert 禁止 — ヘルパー関数または `persistAsEntity()` に委譲する | `grep -rn "\.insert {" backend/src/test/kotlin` | 1件以上 → Critical |
+
+> **修正指針**:
+> - `*.now()` → `TestClockConfig.FIXED_TEST_TIME` に置換
+> - `Table.insert {}` → ヘルパー関数化または `entity.persistAsEntity()` に置換
+
+#### 非 Grep 系（QG-3 Stage 2 で review-loop に委ねる）
+
+以下は機械検出が難しいため、QG-3 Stage 2 の `review-loop` 呼び出し時にルールをコンテキストとして注入して判断を委ねる（下記 QG-3 Stage 2 を参照）:
+
+- `it {}` 30行超え → `context` + `beforeTest` に分離
+- 集約 ID（executionId 等）を複数の `it` で共有していないか
+- Controller 内で変換ロジックを直書きしていないか（Request クラスへ委譲すること）
+- BE 型変更時に FE 型定義・zod スキーマを同時更新しているか
+- PR description の AC と実装が一致しているか
+
 ### QG-1: コードフォーマットとビルド
 
 BEとFEを並列で実行:
@@ -540,10 +569,24 @@ mihari が FAIL または ESCALATE を返した場合、mihari のログ（scrat
 
 ステージ1 PASS後に **`review-loop` スキルを呼び出す**。Codex では `review-loop` の `SKILL.md` を読み、PR なしモード相当で実行する。
 
+**呼び出し前に `~/.claude/review-rules/` を読み込み、プロジェクト固有ルールを args に注入する:**
+
+```bash
+# プロジェクト固有レビュールールを収集
+REVIEW_RULES=""
+[ -f ~/.claude/review-rules/backend.md ] && REVIEW_RULES+=$(cat ~/.claude/review-rules/backend.md)
+[ -f ~/.claude/review-rules/frontend.md ] && REVIEW_RULES+=$(cat ~/.claude/review-rules/frontend.md)
 ```
-Skill(skill="review-loop")
-# Codex: review-loop SKILL.md を読み、同じ diff 範囲で実行する
+
 ```
+Skill(
+  skill="review-loop",
+  args="以下のプロジェクト固有レビュー観点も含めてレビューすること（過去の実際の指摘から蓄積されたルール）:\n\n${REVIEW_RULES}"
+)
+# Codex: review-loop SKILL.md を読み、同じ diff 範囲・同じ追加観点で実行する
+```
+
+> `~/.claude/review-rules/` が存在しない場合は args なしで通常通り呼び出す。
 
 PR が存在しない QG 段階では review-loop は自動的に **PR なしモード**で動作する:
 - `git diff $BASE...HEAD` をローカル diff として使用（`$BASE` は `.claude/tmp/base-branch.txt` から検出）
