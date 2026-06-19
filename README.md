@@ -68,11 +68,106 @@ senju/
 - リポジトリ自体を Private に保ち、自分用 SSoT として使う
 - 公開したいスキルが固まってきたら、Public リポジトリにそのサブセットを切り出す（`git subtree split` など）
 
-## スキル一覧
+## よく使うスキルとワークフロー
 
-> Phase 1 で `~/.claude/skills/` から取り込み予定。
+チケット起票から PR マージまでの典型的な開発フローで使うスキル群。
 
-- _(取り込み待ち)_
+```
+refine-ticket → kouunryuusui → review-loop-duo → review-decision-aid-html → review-response-loop
+```
+
+### 1. refine-ticket — チケットを実装可能な状態に磨く
+
+```
+/refine-ticket
+```
+
+既存チケット（JIRA / GitHub Issue / Linear / Notion 等）の description と受け入れ条件（AC）を
+GWT+Examples 形式・7項目品質基準まで磨き上げる。
+曖昧・抽象的・AC 不在のチケットを、第三者が PASS/FAIL を機械判定できる状態にする。
+
+**使うとき**: 「チケットをrefineして」「ACを整えて」「受け入れ条件を磨いて」
+
+### 2. kouunryuusui — 設計→実装→PR を自律的に走り切る
+
+```
+/kouunryuusui
+```
+
+Epic/US チケットから設計→チケット分割→実装→PR 作成まで自律的に走り続ける統合開発ワークフロー。
+上位フロー（設計・分割）と下位フロー（実装・PR）を 2 層で分離して実行する。
+
+**使うとき**: 「kouunryuusui」と明示的に指示する
+
+### 3. review-loop-duo — Claude と Codex の並列クロスレビュー
+
+```
+/review-loop-duo
+```
+
+Claude の 9 観点並列レビューと Codex CLI の独立レビューを同時起動し、
+両モデルの指摘を統合して Critical/Warning がゼロになるまでループする。
+
+**使うとき**: 「duo review」「並列レビュー」「Claude と Codex 両方でレビュー」「セカンドオピニオン込みでレビュー」
+
+### 4. review-decision-aid-html — レビュー指摘の対応方針を HTML で選択
+
+```
+/review-decision-aid-html
+```
+
+PR レビュー指摘の対応方針（SHOULD / NICE / DISCUSS / DEFER）を、
+ユーザーが選択・コピーできるインタラクティブな HTML decision aid として出力する。
+
+**使うとき**: 「レビュー対応方針をHTMLで」「どれを対応するか選べるように」「指摘の対応方針をdecision aidにして」
+
+### 5. review-response-loop — 修正後の commit・push・Resolve を一気通貫
+
+```
+/review-response-loop
+```
+
+レビュー指摘の修正完了後、QG（品質ゲート）→ commit → push → 全スレッドへの返信＆Resolve を自動実行する。
+
+**使うとき**: 「修正終わった」「全部直した」「スレッド返信して」「返信してResolve」「レビュー対応完了まで」
+
+---
+
+## スキル一覧（全スキル）
+
+| スキル | 用途 |
+|--------|------|
+| `refine-ticket` | チケットの AC を GWT 形式で磨く |
+| `kouunryuusui` | 設計→実装→PR を自律的に走り切る統合ワークフロー |
+| `review-loop` | Critical/Warning がゼロになるまでAIレビューをループ |
+| `review-loop-duo` | Claude + Codex CLI の並列クロスレビューループ |
+| `receive-review` | PRレビュー指摘をトリアージ・対応方針プランを作成 |
+| `review-decision-aid-html` | レビュー指摘の対応方針を HTML decision aid で選択 |
+| `review-response-loop` | 修正後の QG → commit → push → 返信＆Resolve を自動実行 |
+| `software-requirements` | 対話形式で要求を引き出し仕様書を作成 |
+| `init-prompt` | 初回プロンプトを Goal/Constraints/AC に即席整理 |
+| `planner` | タスクを分解して作業計画を立てる |
+| `vertical-slice` | 機能を垂直スライスで分割する |
+| `split-on-the-fly` | タスクをその場でサブタスクに分割 |
+| `stacked-pr` | スタック PR を管理・運用する |
+| `pr-size-guard` | PR サイズが大きすぎる場合に警告 |
+| `tidy-first` | 整理先行（リファクタ→機能追加）の順序を守る |
+| `test-matrix` | 同値分割・境界値等の技法でテスト設計 |
+| `mihari` | テスト充足性を多観点で反復レビュー |
+| `code-structure` | アーキテクチャを PlantUML で図示 |
+| `code-why` | 「なぜそう書いたか」を説明しながら実装 |
+| `html-output` | 成果物（計画・仕様・レポート）を HTML で出力 |
+| `ui-change-report` | UI 変更のビフォーアフターレポートを生成 |
+| `data-model-designer` | データモデルを設計・図示 |
+| `feature-flag-strategy` | フィーチャーフラグの戦略を設計 |
+| `strategy-advisor` | 技術的意思決定のアドバイス |
+| `doc-review-meeting` | ドキュメントレビュー MTG を会話形式でシミュレート |
+| `engineering-team-meeting` | スプリントプランニング等をエージェントチームでシミュレート |
+| `sier-dev` | ウォーターフォール型開発ワークフロー |
+| `jira-cli` | jira-cli 経由で Jira を操作 |
+| `codex-cli` | OpenAI Codex CLI を Claude Code から呼び出す |
+| `codex-advisor` | `advisor` ツールの活用ガイド |
+| `undine` | — |
 
 ## ロードマップ
 
