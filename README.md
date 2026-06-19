@@ -158,6 +158,7 @@ PR レビュー指摘の対応方針（SHOULD / NICE / DISCUSS / DEFER）を、
 | `code-why` | 「なぜそう書いたか」を説明しながら実装 |
 | `html-output` | 成果物（計画・仕様・レポート）を HTML で出力 |
 | `ui-change-report` | UI 変更のビフォーアフターレポートを生成 |
+| `pdm-mockup` | 実装前にPdMへ画面モックを見せて合意を取る |
 | `data-model-designer` | データモデルを設計・図示 |
 | `feature-flag-strategy` | フィーチャーフラグの戦略を設計 |
 | `strategy-advisor` | 技術的意思決定のアドバイス |
