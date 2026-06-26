@@ -1,14 +1,18 @@
 ---
-name: spec-to-plan
-license: MIT
-description: "要件・仕様から全体の設計方針を策定し、sier-devスキルでドキュメントを生成した後、WBSを作成する統合プランニングスキル。kouunryuusui の上位フロー（E1〜E3）のエッセンスを取り込んでいる。「設計方針を決めたい」「WBSを作りたい」「プロジェクト計画を立てたい」「要件からWBSへ」「設計書とWBSをセットで作りたい」「全体計画を整理したい」「どう進めればいいか教えて」「kouunryuusuiを使う前に計画したい」「仕様からドキュメントを作って進め方もほしい」などのキーワードが出たら必ずこのスキルを使うこと。"
 aliases:
-  - s2p
-  - spec2plan
-  - 設計方針
-  - wbs
+    - s2p
+    - spec2plan
+    - 設計方針
+    - wbs
+description: 要件・仕様から全体の設計方針を策定し、sier-devスキルでドキュメントを生成した後、WBSを作成する統合プランニングスキル。kouunryuusui の上位フロー（E1〜E3）のエッセンスを取り込んでいる。「設計方針を決めたい」「WBSを作りたい」「プロジェクト計画を立てたい」「要件からWBSへ」「設計書とWBSをセットで作りたい」「全体計画を整理したい」「どう進めればいいか教えて」「kouunryuusuiを使う前に計画したい」「仕様からドキュメントを作って進め方もほしい」などのキーワードが出たら必ずこのスキルを使うこと。
+license: MIT
+metadata:
+    github-path: skills/spec-to-plan
+    github-ref: refs/heads/main
+    github-repo: https://github.com/FScoward/senju
+    github-tree-sha: 07681de4a435a17150f19995b09a702578cd0f9a
+name: spec-to-plan
 ---
-
 # spec-to-plan $ARGUMENTS
 
 要件・仕様を起点に、**設計方針策定 → ドキュメント生成（sier-dev） → WBS作成**を一気通貫で行う統合プランニングスキル。
